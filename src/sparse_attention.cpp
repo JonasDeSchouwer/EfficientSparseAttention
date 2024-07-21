@@ -6,6 +6,7 @@
 #include <ctime>
 
 
+bool DEBUG = false;
 bool VERBOSE = false;
 bool PROFILING = true;
 
@@ -23,7 +24,6 @@ void printFlatFloatTensor(torch::Tensor t) {
         std::cout << t.index({i}).item<float>() << " ";
     }
 }
-
 
 
 class BallTree;
@@ -107,10 +107,11 @@ public:
      * @param query A (D,) tensor to search for matches.
      * @param bestMatchesSoFar A pointer to the BestMatches object that stores the best matches found so far.
      * @param k The number of best matches to find.
+     * @return A pair consisting of (# nodes searched, # keys searched).
      */
-    void query(torch::Tensor query, float query_norm, BestMatchesPtr bestMatchesSoFar, int k) {
+    std::pair<int,int> query(torch::Tensor query, float query_norm, BestMatchesPtr bestMatchesSoFar, int k) {
         // for debugging
-        if (VERBOSE) {
+        if (DEBUG) {
             std::string indent = std::string(2*depth, ' ');
             std::cout << indent << "->";
             if (isLeafNode) {
@@ -122,7 +123,7 @@ public:
         // If this is a leaf node, search the data
         if (isLeafNode) {
             // Compute the inner products of the query with all points in the data
-            int num_nodes = indices.size(0);
+            int num_keys = indices.size(0);
             torch::Tensor innerProducts = data.mm(query.unsqueeze(1)).squeeze(1);
             // Add the best matches to the bestMatchesSoFar object
             for (int i = 0; i < innerProducts.size(0); i++) {
@@ -130,14 +131,16 @@ public:
                 int value = indices.index({i}).item<int>();
                 bestMatchesSoFar->add(score, value);
             }
-            return;
+            return {1, num_keys};
         
         // If this is not a leaf node, do a guided search
         // IPUB is short for Inner Product Upper Bound
         } else {
+            int num_nodes_searched = 1;
+            int num_keys_searched = 0;
+
             float left_IPUB = pLeft->maxInnerProduct(query, query_norm);
             float right_IPUB = pRight->maxInnerProduct(query, query_norm);
-            
             BallTreePtr most_promising_child;
             BallTreePtr least_promising_child;
             float most_promising_child_IPUB;
@@ -157,11 +160,18 @@ public:
             // Guided search: search the most promising child first
             // But only search if it can improve on the best matches so far
             if (most_promising_child_IPUB > bestMatchesSoFar->lowerBound()) {
-                most_promising_child->query(query, query_norm, bestMatchesSoFar, k);
+                auto [num_nodes_searched_, num_keys_searched_] =
+                    most_promising_child->query(query, query_norm, bestMatchesSoFar, k);
+                num_nodes_searched += num_nodes_searched_;
+                num_keys_searched += num_keys_searched_;
             }
             if (least_promising_child_IPUB > bestMatchesSoFar->lowerBound()) {
-                least_promising_child->query(query, query_norm, bestMatchesSoFar, k);
+                auto [num_nodes_searched_, num_keys_searched_] =
+                    least_promising_child->query(query, query_norm, bestMatchesSoFar, k);
+                num_nodes_searched += num_nodes_searched_;
+                num_keys_searched += num_keys_searched_;
             }
+            return {num_nodes_searched, num_keys_searched};
         }
     }
 
@@ -174,6 +184,25 @@ public:
         } else {
             pLeft->print();
             pRight->print();
+        }
+    }
+
+    // Print the MIPs of the query with every descendant of the ball tree
+    void printMIPs(torch::Tensor query, float query_norm) {
+        std::string indent = std::string(2*depth, ' ');
+        std::cout << indent << "(" << radius << ", " << indices.size(0) << "): " << maxInnerProduct(query, query_norm) << std::endl;
+        if (!isLeafNode) {
+            pLeft->printMIPs(query, query_norm);
+            pRight->printMIPs(query, query_norm);
+        }
+    }
+
+    // Compute the total number of nodes
+    int numNodes() {
+        if (isLeafNode) {
+            return 1;
+        } else {
+            return 1 + pLeft->numNodes() + pRight->numNodes();
         }
     }
 };
@@ -191,10 +220,12 @@ BallTreePtr buildBallTree(torch::Tensor data, torch::Tensor indices, int maxLeaf
     BallTree currentNode(center, radius, depth);
 
     // for debugging
-    if (VERBOSE) {
+    if (DEBUG) {
         std::string indent = std::string(2*depth, ' ');
-        std::cout << indent;
-        printFlatIntTensor(indices);
+        std::cout << indent << indices.size(0) << ": ";
+        if (false) {
+            printFlatIntTensor(indices);
+        }
         std::cout << radius << std::endl;
     }
 
@@ -293,11 +324,22 @@ torch::Tensor nearestKKeys(torch::Tensor queries, torch::Tensor keys, int k, int
                 }
                 torch::Tensor query = queries.index({b, h, n});
                 float query_norm = query.norm().item<float>();
-                ballTree->query(query, query_norm, bestMatches, k);
+                
+                // the actual query
+                auto [num_nodes_searched, num_keys_searched]
+                    = ballTree->query(query, query_norm, bestMatches, k);
+                
+                // result processing
+                float kth_best_dot_product = bestMatches->lowerBound();
                 torch::Tensor matches = bestMatches->getMatches();
                 result.index_put_({b, h, n}, matches);
+                if (DEBUG) {
+                    ballTree->printMIPs(query, query_norm);
+                }
                 if (VERBOSE) {
                     std::cout << "Succeeded" << std::endl;
+                    std::cout << num_keys_searched << "/" << Nk << " keys searched, and " << num_nodes_searched << "/" << ballTree->numNodes() << " nodes searched" << std::endl;
+                    std::cout << "Resulting k'th best dot product: " << kth_best_dot_product << std::endl;
                 }
             }
             if (PROFILING) {
@@ -343,9 +385,16 @@ void test_best_matches() {
     std::cout << matches << std::endl;
 }
 
+void test_nearestKKeys() {
+    torch::Tensor queries = torch::randn({2, 3, 500, 5});
+    torch::Tensor keys = torch::randn({2, 3, 1000, 5});
+    torch::Tensor result = nearestKKeys(queries, keys, 3, 3);
+}
+
 
 void run_all_tests() {
     test_best_matches();
+    test_nearestKKeys();
 }
 
 
@@ -356,4 +405,6 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("myDummyFunction", &myDummyFunction, "A dummy function that adds two tensors",
                 py::arg("a"), py::arg("b"));
     m.def("run_all_tests", &run_all_tests, "Run all tests");
+    m.def("test_best_matches", &test_best_matches, "Test the BestMatches class");
+    m.def("test_nearestKKeys", &test_nearestKKeys, "Test the nearestKKeys function");
 }
