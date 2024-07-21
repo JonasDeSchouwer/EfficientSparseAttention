@@ -1,0 +1,17 @@
+# Libtorch binaries
+libtorch/
+
+# Build files
+build/
+*.egg-info/
+dist/
+
+# Scratchpads
+scratchpad.ipynb
+scratchpad.py
+
+# vs code files
+.vscode/
+
+# Other
+keys-queries/
