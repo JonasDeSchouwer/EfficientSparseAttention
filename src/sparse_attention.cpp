@@ -330,10 +330,10 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
 
     // declarations of profiling variables
     std::chrono::duration<double> buildballtree_seconds, query_seconds;
-    std::chrono::time_point<std::chrono::system_clock> start, end;
     #pragma omp parallel for collapse(2)
     for (int b = 0; b < B; b++) {
         for (int h = 0; h < H; h++) {
+            std::chrono::time_point<std::chrono::system_clock> start, end;
             // create ball tree of the keys
             if (PROFILING) {
                 start = std::chrono::system_clock::now();
@@ -360,6 +360,7 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
             }
             #pragma omp parallel for
             for (int n = 0; n < Nq; n++) {
+                auto start_query_time = std::chrono::system_clock::now();
                 if (VERBOSE) {
                     std::cout << "Querying (" << b << ", " << h << ", " << n << "): " << std::endl;
                 }
