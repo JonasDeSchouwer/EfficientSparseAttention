@@ -4,6 +4,7 @@
 #include <torch/extension.h>
 #include <chrono>
 #include <ctime>
+#include <omp.h>
 
 
 bool DEBUG = false;
@@ -11,14 +12,14 @@ bool VERBOSE = false;
 bool PROFILING = true;
 
 
-void printFlatIntTensor(torch::Tensor t) {
+void printFlatIntTensor(at::Tensor t) {
     assert(t.dim() == 1);
     for (int i = 0; i < t.size(0); i++) {
         std::cout << t.index({i}).item<int>() << " ";
     }
 }
 
-void printFlatFloatTensor(torch::Tensor t) {
+void printFlatFloatTensor(at::Tensor t) {
     assert(t.dim() == 1);
     for (int i = 0; i < t.size(0); i++) {
         std::cout << t.index({i}).item<float>() << " ";
@@ -60,9 +61,9 @@ public:
         }
     }
 
-    // Get the best k matches, as an (ordered) k-element torch tensor
-    torch::Tensor getMatches() {
-        torch::Tensor result = torch::zeros({k}, torch::kInt32);
+    // Get the best k matches, as an (ordered) k-element at tensor
+    at::Tensor getMatches() {
+        at::Tensor result = at::empty({k}, at::ScalarType::Int);
         assert(pq.size() == k);
         for (int i = k - 1; i >= 0; i--) {
             result[i] = pq.top().second;
@@ -81,19 +82,19 @@ public:
     BallTreePtr pLeft;       // the left child
     BallTreePtr pRight;      // the right child
     float radius;
-    torch::Tensor center;
+    at::Tensor center;
     bool isLeafNode;
-    torch::Tensor data;      // (N,D) for leaf nodes, null for non-leaf nodes
-    torch::Tensor indices;   // (N,) for leaf nodes, null for non-leaf nodes
+    at::Tensor data;      // (N,D) for leaf nodes, null for non-leaf nodes
+    at::Tensor indices;   // (N,) for leaf nodes, null for non-leaf nodes
     int depth;
 
     // Constructor for empty node
-    BallTree(torch::Tensor center, float radius, int depth)
+    BallTree(at::Tensor center, float radius, int depth)
         : pLeft(nullptr), pRight(nullptr), radius(radius), center(center), isLeafNode(false), depth(depth) {}
 
     // The maximum inner product that a query q can have with any point in the ball
     // This is ⟨q, center⟩ + ‖q‖ * radius
-    float maxInnerProduct(torch::Tensor query, float query_norm) {
+    float maxInnerProduct(at::Tensor query, float query_norm) {
         return query.dot(center).item<float>() + query_norm * radius;
     }
 
@@ -109,7 +110,7 @@ public:
      * @param k The number of best matches to find.
      * @return A pair consisting of (# nodes searched, # keys searched).
      */
-    std::pair<int,int> query(torch::Tensor query, float query_norm, BestMatchesPtr bestMatchesSoFar, int k) {
+    std::pair<int,int> query(at::Tensor query, float query_norm, BestMatchesPtr bestMatchesSoFar, int k) {
         // for debugging
         if (DEBUG) {
             std::string indent = std::string(2*depth, ' ');
@@ -124,7 +125,7 @@ public:
         if (isLeafNode) {
             // Compute the inner products of the query with all points in the data
             int num_keys = indices.size(0);
-            torch::Tensor innerProducts = data.mm(query.unsqueeze(1)).squeeze(1);
+            at::Tensor innerProducts = data.mm(query.unsqueeze(1)).squeeze(1);
             // Add the best matches to the bestMatchesSoFar object
             for (int i = 0; i < innerProducts.size(0); i++) {
                 float score = innerProducts.index({i}).item<float>();
@@ -188,7 +189,7 @@ public:
     }
 
     // Print the MIPs of the query with every descendant of the ball tree
-    void printMIPs(torch::Tensor query, float query_norm) {
+    void printMIPs(at::Tensor query, float query_norm) {
         std::string indent = std::string(2*depth, ' ');
         std::cout << indent << "(" << radius << ", " << indices.size(0) << "): " << maxInnerProduct(query, query_norm) << std::endl;
         if (!isLeafNode) {
@@ -207,15 +208,15 @@ public:
     }
 };
 
-std::pair<torch::Tensor, torch::Tensor> getTwoFarPoints(torch::Tensor data);
+std::pair<at::Tensor, at::Tensor> getTwoFarPoints(at::Tensor data);
 
-BallTreePtr buildBallTree(torch::Tensor data, torch::Tensor indices, int maxLeafSize, int depth=0) {
+BallTreePtr buildBallTree(at::Tensor data, at::Tensor indices, int maxLeafSize, int depth=0) {
     // data: (N, D)
     // indices: (N,)
     int N = data.size(0);
     assert (N == indices.size(0));
 
-    torch::Tensor center = data.mean(0);
+    at::Tensor center = data.mean(0);
     float radius = (data - center).pow(2).sum(1).sqrt().max().item<float>();
     BallTree currentNode(center, radius, depth);
 
@@ -236,11 +237,11 @@ BallTreePtr buildBallTree(torch::Tensor data, torch::Tensor indices, int maxLeaf
     } else {
         // split the data into two parts
         auto [P, Q] = getTwoFarPoints(data);
-        torch::Tensor P_dists = (data - P).pow(2).sum(1);
-        torch::Tensor Q_dists = (data - Q).pow(2).sum(1);
+        at::Tensor P_dists = (data - P).pow(2).sum(1);
+        at::Tensor Q_dists = (data - Q).pow(2).sum(1);
 
-        torch::Tensor left_mask = P_dists < Q_dists;
-        torch::Tensor right_mask = ~left_mask;
+        at::Tensor left_mask = P_dists < Q_dists;
+        at::Tensor right_mask = ~left_mask;
 
         // TODO: optimization: free data memory and only remember left_mask and right_mask
 
@@ -258,28 +259,28 @@ BallTreePtr buildBallTree(torch::Tensor data, torch::Tensor indices, int maxLeaf
 get 2 points (P,Q) in data that are far apart, but can be computed efficiently
 
 returns:
-    (P, Q): torch.Tensor, torch.Tensor
+    (P, Q): at.Tensor, at.Tensor
 */
-std::pair<torch::Tensor, torch::Tensor> getTwoFarPoints(torch::Tensor data) {
+std::pair<at::Tensor, at::Tensor> getTwoFarPoints(at::Tensor data) {
     // pick a random point x in data
-    torch::Tensor rand_idx = torch::randint(0, data.size(0), {1});
-    torch::Tensor x = data.index({rand_idx});
+    at::Tensor rand_idx = at::randint(0, data.size(0), {1});
+    at::Tensor x = data.index({rand_idx});
 
     // find the point P in data that is farthest from x
-    torch::Tensor x_dists = (data - x).pow(2).sum(1);
-    torch::Tensor P_idx = x_dists.argmax();
-    torch::Tensor P = data.index({P_idx});
-    torch::Tensor P_dists = (data - P).pow(2).sum(1);
+    at::Tensor x_dists = (data - x).pow(2).sum(1);
+    at::Tensor P_idx = x_dists.argmax();
+    at::Tensor P = data.index({P_idx});
+    at::Tensor P_dists = (data - P).pow(2).sum(1);
 
     // find the point Q in data that is farthest from P
-    torch::Tensor Q_idx = P_dists.argmax();
-    torch::Tensor Q = data.index({Q_idx});
+    at::Tensor Q_idx = P_dists.argmax();
+    at::Tensor Q = data.index({Q_idx});
 
     return std::make_pair(P, Q);
 }
 
 
-torch::Tensor nearestKKeys(torch::Tensor queries, torch::Tensor keys, int k, int maxLeafSize) {
+at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafSize) {
     /*
     queries: (B, H, Nq, kq_dim)
     keys: (B, H, Nk, kq_dim)
@@ -296,42 +297,44 @@ torch::Tensor nearestKKeys(torch::Tensor queries, torch::Tensor keys, int k, int
     // in general, no reason why N would need to be the same for queries and keys
     assert (queries.size(3) == keys.size(3));
 
-    torch::Tensor result = torch::zeros({B, H, Nq, k}, torch::kInt32);
+    at::Tensor result = at::empty({B, H, Nq, k}, at::ScalarType::Int);
 
     // declarations of profiling variables
     std::chrono::duration<double> buildballtree_seconds, query_seconds;
     std::chrono::time_point<std::chrono::system_clock> start, end;
+    #pragma omp parallel for collapse(2)
     for (int b = 0; b < B; b++) {
         for (int h = 0; h < H; h++) {
             // create ball tree of the keys
             if (PROFILING) {
                 start = std::chrono::system_clock::now();
             }
-            BallTreePtr ballTree = buildBallTree(keys.index({b, h}), torch::arange({Nk}), maxLeafSize, 0);
-            BestMatchesPtr bestMatches = std::make_shared<BestMatches>(k);
+            BallTreePtr ballTree = buildBallTree(keys.index({b, h}), at::arange({Nk}), maxLeafSize, 0);
             if (PROFILING) {
                 end = std::chrono::system_clock::now();
                 buildballtree_seconds += end - start;
             }
 
+            // query the ball tree for every query
             if (PROFILING) {
                 start = std::chrono::system_clock::now();
             }
-            // query the ball tree for every query
+            #pragma omp parallel for
             for (int n = 0; n < Nq; n++) {
                 if (VERBOSE) {
                     std::cout << "Querying (" << b << ", " << h << ", " << n << "): " << std::endl;
                 }
-                torch::Tensor query = queries.index({b, h, n});
+                at::Tensor query = queries.index({b, h, n});
                 float query_norm = query.norm().item<float>();
                 
                 // the actual query
+                BestMatchesPtr bestMatches = std::make_shared<BestMatches>(k);
                 auto [num_nodes_searched, num_keys_searched]
                     = ballTree->query(query, query_norm, bestMatches, k);
                 
                 // result processing
                 float kth_best_dot_product = bestMatches->lowerBound();
-                torch::Tensor matches = bestMatches->getMatches();
+                at::Tensor matches = bestMatches->getMatches();
                 result.index_put_({b, h, n}, matches);
                 if (DEBUG) {
                     ballTree->printMIPs(query, query_norm);
@@ -359,7 +362,7 @@ torch::Tensor nearestKKeys(torch::Tensor queries, torch::Tensor keys, int k, int
 }
 
 
-torch::Tensor myDummyFunction(torch::Tensor a, torch::Tensor b) {
+at::Tensor myDummyFunction(at::Tensor a, at::Tensor b) {
     return a+b;
 }
 
@@ -378,7 +381,7 @@ void test_best_matches() {
     bestMatches.add(4.0, 4);
     bestMatches.add(3.0, 3);
     bestMatches.add(6.0, 6);
-    torch::Tensor matches = bestMatches.getMatches();
+    at::Tensor matches = bestMatches.getMatches();
     assert(matches[0].item<int>() == 10);
     assert(matches[1].item<int>() == 9);
     assert(matches[2].item<int>() == 8);
@@ -386,9 +389,15 @@ void test_best_matches() {
 }
 
 void test_nearestKKeys() {
-    torch::Tensor queries = torch::randn({2, 3, 500, 5});
-    torch::Tensor keys = torch::randn({2, 3, 1000, 5});
-    torch::Tensor result = nearestKKeys(queries, keys, 3, 3);
+    at::Tensor queries = at::randn({2, 3, 1000, 5});
+    at::Tensor keys = at::randn({2, 3, 1000, 5});
+    at::Tensor result = nearestKKeys(queries, keys, 3, 3);
+}
+
+void test_buildBallTree() {
+    at::Tensor data = at::randn({1000, 5});
+    at::Tensor indices = at::arange({1000});
+    BallTreePtr ballTree = buildBallTree(data, indices, 3);
 }
 
 
@@ -407,4 +416,5 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
     m.def("run_all_tests", &run_all_tests, "Run all tests");
     m.def("test_best_matches", &test_best_matches, "Test the BestMatches class");
     m.def("test_nearestKKeys", &test_nearestKKeys, "Test the nearestKKeys function");
+    m.def("test_buildBallTree", &test_buildBallTree, "Test the buildBallTree function");
 }
