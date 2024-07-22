@@ -327,6 +327,9 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
             .dtype(at::ScalarType::Int)
             .device(queries.device())
     );
+    // a pointer, so that we can access the data in parallel
+    int* result_data = result.data_ptr<int>();
+    
 
     // declarations of profiling variables
     std::chrono::duration<double> buildballtree_seconds, query_seconds;
@@ -354,13 +357,12 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
                 buildballtree_seconds += end - start;
             }
 
-            // query the ball tree for every query
+            // --- query the ball tree for every query ---
             if (PROFILING) {
                 start = std::chrono::system_clock::now();
             }
             #pragma omp parallel for
             for (int n = 0; n < Nq; n++) {
-                auto start_query_time = std::chrono::system_clock::now();
                 if (VERBOSE) {
                     std::cout << "Querying (" << b << ", " << h << ", " << n << "): " << std::endl;
                 }
@@ -375,7 +377,12 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
                 // result processing
                 float kth_best_dot_product = bestMatches->lowerBound();
                 at::Tensor matches = bestMatches->getMatches(query.device());
-                result.index_put_({b, h, n}, matches);
+
+                // store the result
+                int base_index = b*H*Nq*k + h*Nq*k + n*k;
+                std::memcpy(result_data + base_index, matches.data_ptr<int>(), k*sizeof(int));
+                
+
                 if (DEBUG) {
                     ballTree->printMIPs(query, query_norm);
                 }
