@@ -8,11 +8,12 @@ setup(
             name="sparse_attention",
             sources=["src/sparse_attention.cpp"],
             extra_compile_args=[
-                "-g",
-                "-O0",
-                "-fno-inline",
-                # "-O3",
-            ],  # Enable debugging symbols and disable any optimizations
+                # "-g",  # Enable debugging symbols
+                # "-O0",  # Disable any optimizations
+                # "-fno-inline",  # Disable function inlining
+                "-O3",  # Enable optimizations
+                # "-fopenmp",  # Enable OpenMP
+            ],
         )
     ],
     cmdclass={"build_ext": BuildExtension},
