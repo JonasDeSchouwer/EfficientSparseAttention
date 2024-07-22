@@ -62,8 +62,13 @@ public:
     }
 
     // Get the best k matches, as an (ordered) k-element at tensor
-    at::Tensor getMatches() {
-        at::Tensor result = at::empty({k}, at::ScalarType::Int);
+    at::Tensor getMatches(at::Device device) {
+        at::Tensor result = at::empty(
+            {k},
+            at::TensorOptions()
+                .dtype(at::ScalarType::Int)
+                .device(device)
+        );
         assert(pq.size() == k);
         for (int i = k - 1; i >= 0; i--) {
             result[i] = pq.top().second;
@@ -263,7 +268,12 @@ returns:
 */
 std::pair<at::Tensor, at::Tensor> getTwoFarPoints(at::Tensor data) {
     // pick a random point x in data
-    at::Tensor rand_idx = at::randint(0, data.size(0), {1});
+    at::Tensor rand_idx = at::randint(
+        0, data.size(0), {1},
+        at::TensorOptions()
+            .dtype(at::ScalarType::Int)
+            .device(data.device())
+    );
     at::Tensor x = data.index({rand_idx});
 
     // find the point P in data that is farthest from x
@@ -297,7 +307,20 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
     // in general, no reason why N would need to be the same for queries and keys
     assert (queries.size(3) == keys.size(3));
 
-    at::Tensor result = at::empty({B, H, Nq, k}, at::ScalarType::Int);
+    if (queries.device() != keys.device()) {
+        std::cerr << "queries and keys must be on the same device" << std::endl;
+        exit(1);
+    }
+    if (queries.device() != at::Device(at::kCPU)) {
+        std::cout << "It seems your keys and queries are not on the CPU. This is not recommended" << std::endl;
+    }
+
+    at::Tensor result = at::empty(
+        {B, H, Nq, k},
+        at::TensorOptions()
+            .dtype(at::ScalarType::Int)
+            .device(queries.device())
+    );
 
     // declarations of profiling variables
     std::chrono::duration<double> buildballtree_seconds, query_seconds;
@@ -309,7 +332,7 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
             if (PROFILING) {
                 start = std::chrono::system_clock::now();
             }
-            BallTreePtr ballTree = buildBallTree(keys.index({b, h}), at::arange({Nk}), maxLeafSize, 0);
+            BallTreePtr ballTree = buildBallTree(keys.index({b, h}), at::arange({Nk}, keys.device()), maxLeafSize, 0);
             if (PROFILING) {
                 end = std::chrono::system_clock::now();
                 buildballtree_seconds += end - start;
@@ -334,7 +357,7 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
                 
                 // result processing
                 float kth_best_dot_product = bestMatches->lowerBound();
-                at::Tensor matches = bestMatches->getMatches();
+                at::Tensor matches = bestMatches->getMatches(query.device());
                 result.index_put_({b, h, n}, matches);
                 if (DEBUG) {
                     ballTree->printMIPs(query, query_norm);
@@ -381,7 +404,7 @@ void test_best_matches() {
     bestMatches.add(4.0, 4);
     bestMatches.add(3.0, 3);
     bestMatches.add(6.0, 6);
-    at::Tensor matches = bestMatches.getMatches();
+    at::Tensor matches = bestMatches.getMatches(at::Device(at::kCPU));
     assert(matches[0].item<int>() == 10);
     assert(matches[1].item<int>() == 9);
     assert(matches[2].item<int>() == 8);
