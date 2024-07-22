@@ -131,10 +131,16 @@ public:
             // Compute the inner products of the query with all points in the data
             int num_keys = indices.size(0);
             at::Tensor innerProducts = data.mm(query.unsqueeze(1)).squeeze(1);
+
+            // Access the raw data pointers for faster access in the loop
+            float* innerProducts_ptr = innerProducts.data_ptr<float>();
+            int* indices_ptr = indices.data_ptr<int>();
+
             // Add the best matches to the bestMatchesSoFar object
-            for (int i = 0; i < innerProducts.size(0); i++) {
-                float score = innerProducts.index({i}).item<float>();
-                int value = indices.index({i}).item<int>();
+            for (int i = 0; i < num_keys; i++) {
+
+                float score = innerProducts_ptr[i];
+                int value = indices_ptr[i];
                 bestMatchesSoFar->add(score, value);
             }
             return {1, num_keys};
@@ -312,7 +318,7 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
         exit(1);
     }
     if (queries.device() != at::Device(at::kCPU)) {
-        std::cout << "It seems your keys and queries are not on the CPU. This is not recommended" << std::endl;
+        std::cout << "It seems your keys and queries are not on the CPU. This is not recommended for efficiency reasons." << std::endl;
     }
 
     at::Tensor result = at::empty(
@@ -332,7 +338,17 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
             if (PROFILING) {
                 start = std::chrono::system_clock::now();
             }
-            BallTreePtr ballTree = buildBallTree(keys.index({b, h}), at::arange({Nk}, keys.device()), maxLeafSize, 0);
+            at::Tensor indices = at::arange({Nk},
+                at::TensorOptions()
+                    .device(keys.device())
+                    .dtype(at::ScalarType::Int)
+            );
+            BallTreePtr ballTree = buildBallTree(
+                keys.index({b, h}),
+                indices,
+                maxLeafSize,
+                0
+            );
             if (PROFILING) {
                 end = std::chrono::system_clock::now();
                 buildballtree_seconds += end - start;
@@ -419,13 +435,19 @@ void test_nearestKKeys() {
 
 void test_buildBallTree() {
     at::Tensor data = at::randn({1000, 5});
-    at::Tensor indices = at::arange({1000});
+    at::Tensor indices = at::arange(
+        {1000}, 
+        at::TensorOptions()
+            .device(at::Device(at::kCPU))
+            .dtype(at::ScalarType::Int)
+    );
     BallTreePtr ballTree = buildBallTree(data, indices, 3);
 }
 
 
 void run_all_tests() {
     test_best_matches();
+    test_buildBallTree();
     test_nearestKKeys();
 }
 
