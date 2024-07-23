@@ -7,9 +7,9 @@
 #include <omp.h>
 
 
-bool DEBUG = false;
-bool VERBOSE = false;
-bool PROFILING = true;
+#define DEBUG 0
+#define VERBOSE 0
+#define PROFILING 1
 
 
 void printFlatIntTensor(at::Tensor t) {
@@ -30,14 +30,13 @@ void printFlatFloatTensor(at::Tensor t) {
 class BallTree;
 using BallTreePtr = std::shared_ptr<BallTree>;
 class BestMatches;
-using BestMatchesPtr = std::shared_ptr<BestMatches>;
 
 // A class to store the best k matches for this query (i.e. with the k highest scores).
 // Format (score=inner_product, value=index)
 // The matches are stored in a min-heap priority queue.
 // The use of greater allows the worst scores to be stored at the root
 using ScoreValuePair = std::pair<float, int>;
-auto greater = [](ScoreValuePair left, ScoreValuePair right) { return left.first > right.first;};
+auto greater = [](ScoreValuePair left, ScoreValuePair right) {return left.first > right.first;};
 class BestMatches {
 public:
     BestMatches(int k) : k(k), pq(greater) {}
@@ -61,20 +60,13 @@ public:
         }
     }
 
-    // Get the best k matches, as an (ordered) k-element at tensor
-    at::Tensor getMatches(at::Device device) {
-        at::Tensor result = at::empty(
-            {k},
-            at::TensorOptions()
-                .dtype(at::ScalarType::Int)
-                .device(device)
-        );
+    // Put the best k matches in the result tensor
+    void putMatchesInResult(at::TensorAccessor<int,1> result_accessor) {
         assert(pq.size() == k);
         for (int i = k - 1; i >= 0; i--) {
-            result[i] = pq.top().second;
+            result_accessor[i] = pq.top().second;
             pq.pop();
         }
-        return result;
     }
 
 private:
@@ -115,16 +107,16 @@ public:
      * @param k The number of best matches to find.
      * @return A pair consisting of (# nodes searched, # keys searched).
      */
-    std::pair<int,int> query(at::Tensor query, float query_norm, BestMatchesPtr bestMatchesSoFar, int k) {
+    std::pair<int,int> query(at::Tensor query, float query_norm, BestMatches& bestMatchesSoFar, int k) {
         // for debugging
-        if (DEBUG) {
+        #if DEBUG
             std::string indent = std::string(2*depth, ' ');
             std::cout << indent << "->";
             if (isLeafNode) {
                 printFlatIntTensor(indices);
             }
             std::cout << std::endl;
-        }
+        #endif
                 
         // If this is a leaf node, search the data
         if (isLeafNode) {
@@ -133,15 +125,15 @@ public:
             at::Tensor innerProducts = data.mm(query.unsqueeze(1)).squeeze(1);
 
             // Access the raw data pointers for faster access in the loop
-            float* innerProducts_ptr = innerProducts.data_ptr<float>();
-            int* indices_ptr = indices.data_ptr<int>();
+            auto innerProducts_a = innerProducts.accessor<float, 1>();
+            auto indices_a = indices.accessor<int, 1>();
 
             // Add the best matches to the bestMatchesSoFar object
             for (int i = 0; i < num_keys; i++) {
 
-                float score = innerProducts_ptr[i];
-                int value = indices_ptr[i];
-                bestMatchesSoFar->add(score, value);
+                float score = innerProducts_a[i];
+                int value = indices_a[i];
+                bestMatchesSoFar.add(score, value);
             }
             return {1, num_keys};
         
@@ -153,33 +145,23 @@ public:
 
             float left_IPUB = pLeft->maxInnerProduct(query, query_norm);
             float right_IPUB = pRight->maxInnerProduct(query, query_norm);
-            BallTreePtr most_promising_child;
-            BallTreePtr least_promising_child;
-            float most_promising_child_IPUB;
-            float least_promising_child_IPUB;
-            if (left_IPUB > right_IPUB) {
-                most_promising_child = pLeft;
-                least_promising_child = pRight;
-                most_promising_child_IPUB = left_IPUB;
-                least_promising_child_IPUB = right_IPUB;
-            } else {
-                most_promising_child = pRight;
-                least_promising_child = pLeft;
-                most_promising_child_IPUB = right_IPUB;
-                least_promising_child_IPUB = left_IPUB;
+
+            if (left_IPUB < right_IPUB) {
+                // swap the children so that the most promising child is pLeft
+                std::swap(pLeft, pRight);
             }
             
-            // Guided search: search the most promising child first
+            // Guided search: search the most promising child (now left) first
             // But only search if it can improve on the best matches so far
-            if (most_promising_child_IPUB > bestMatchesSoFar->lowerBound()) {
+            if (left_IPUB > bestMatchesSoFar.lowerBound()) {
                 auto [num_nodes_searched_, num_keys_searched_] =
-                    most_promising_child->query(query, query_norm, bestMatchesSoFar, k);
+                    pLeft->query(query, query_norm, bestMatchesSoFar, k);
                 num_nodes_searched += num_nodes_searched_;
                 num_keys_searched += num_keys_searched_;
             }
-            if (least_promising_child_IPUB > bestMatchesSoFar->lowerBound()) {
+            if (right_IPUB > bestMatchesSoFar.lowerBound()) {
                 auto [num_nodes_searched_, num_keys_searched_] =
-                    least_promising_child->query(query, query_norm, bestMatchesSoFar, k);
+                    pRight->query(query, query_norm, bestMatchesSoFar, k);
                 num_nodes_searched += num_nodes_searched_;
                 num_keys_searched += num_keys_searched_;
             }
@@ -232,14 +214,14 @@ BallTreePtr buildBallTree(at::Tensor data, at::Tensor indices, int maxLeafSize, 
     BallTree currentNode(center, radius, depth);
 
     // for debugging
-    if (DEBUG) {
+    #if DEBUG
         std::string indent = std::string(2*depth, ' ');
         std::cout << indent << indices.size(0) << ": ";
         if (false) {
             printFlatIntTensor(indices);
         }
         std::cout << radius << std::endl;
-    }
+    #endif
 
     if (N <= maxLeafSize) {
         currentNode.isLeafNode = true;
@@ -248,10 +230,9 @@ BallTreePtr buildBallTree(at::Tensor data, at::Tensor indices, int maxLeafSize, 
     } else {
         // split the data into two parts
         auto [P, Q] = getTwoFarPoints(data);
-        at::Tensor P_dists = (data - P).pow(2).sum(1);
-        at::Tensor Q_dists = (data - Q).pow(2).sum(1);
 
-        at::Tensor left_mask = P_dists < Q_dists;
+        // put the data into the left or right child
+        at::Tensor left_mask = (data - P).pow(2).sum(1) < (data - Q).pow(2).sum(1);
         at::Tensor right_mask = ~left_mask;
 
         // TODO: optimization: free data memory and only remember left_mask and right_mask
@@ -321,26 +302,29 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
         std::cout << "It seems your keys and queries are not on the CPU. This is not recommended for efficiency reasons." << std::endl;
     }
 
+    at::Tensor query_norms = queries.norm(2, -1);
+    auto query_norms_a = query_norms.accessor<float, 3>();
+
     at::Tensor result = at::empty(
         {B, H, Nq, k},
         at::TensorOptions()
             .dtype(at::ScalarType::Int)
             .device(queries.device())
     );
-    // a pointer, so that we can access the data in parallel
-    int* result_data = result.data_ptr<int>();
-    
+    auto result_a = result.accessor<int, 4>();
 
     // declarations of profiling variables
-    std::chrono::duration<double> buildballtree_seconds, query_seconds;
+    #if PROFILING
+        std::chrono::duration<double> buildballtree_seconds, query_seconds;
+    #endif
     #pragma omp parallel for collapse(2)
     for (int b = 0; b < B; b++) {
         for (int h = 0; h < H; h++) {
-            std::chrono::time_point<std::chrono::system_clock> start, end;
             // create ball tree of the keys
-            if (PROFILING) {
+            #if PROFILING
+                std::chrono::time_point<std::chrono::system_clock> start, end;
                 start = std::chrono::system_clock::now();
-            }
+            #endif
             at::Tensor indices = at::arange({Nk},
                 at::TensorOptions()
                     .device(keys.device())
@@ -352,58 +336,64 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
                 maxLeafSize,
                 0
             );
-            if (PROFILING) {
+            #if PROFILING
                 end = std::chrono::system_clock::now();
                 buildballtree_seconds += end - start;
+            #endif
+
+            int num_threads;
+            #pragma omp parallel
+            {
+                #pragma omp single
+                num_threads = omp_get_num_threads();
             }
 
             // --- query the ball tree for every query ---
-            if (PROFILING) {
+            std::vector<BestMatches> bestMatchesVector(num_threads, BestMatches(k));
+            #if PROFILING
                 start = std::chrono::system_clock::now();
-            }
+            #endif
             #pragma omp parallel for
             for (int n = 0; n < Nq; n++) {
-                if (VERBOSE) {
+                int thread_id = omp_get_thread_num();
+                #if VERBOSE
                     std::cout << "Querying (" << b << ", " << h << ", " << n << "): " << std::endl;
-                }
-                at::Tensor query = queries.index({b, h, n});
-                float query_norm = query.norm().item<float>();
+                #endif
+                at::Tensor query = queries.select(0, b).select(0, h).select(0, n);
+                float query_norm = query_norms_a[b][h][n];
                 
                 // the actual query
-                BestMatchesPtr bestMatches = std::make_shared<BestMatches>(k);
+                auto& bestMatches = bestMatchesVector[thread_id]; // Access the corresponding BestMatches object
                 auto [num_nodes_searched, num_keys_searched]
                     = ballTree->query(query, query_norm, bestMatches, k);
                 
                 // result processing
-                float kth_best_dot_product = bestMatches->lowerBound();
-                at::Tensor matches = bestMatches->getMatches(query.device());
+                #if VERBOSE
+                    float kth_best_dot_product = bestMatches.lowerBound();
+                #endif
+                bestMatches.putMatchesInResult(result_a[b][h][n]);
 
-                // store the result
-                int base_index = b*H*Nq*k + h*Nq*k + n*k;
-                std::memcpy(result_data + base_index, matches.data_ptr<int>(), k*sizeof(int));
-                
-
-                if (DEBUG) {
+                #if DEBUG
                     ballTree->printMIPs(query, query_norm);
-                }
-                if (VERBOSE) {
+                #endif
+                #if VERBOSE
                     std::cout << "Succeeded" << std::endl;
                     std::cout << num_keys_searched << "/" << Nk << " keys searched, and " << num_nodes_searched << "/" << ballTree->numNodes() << " nodes searched" << std::endl;
                     std::cout << "Resulting k'th best dot product: " << kth_best_dot_product << std::endl;
-                }
+                #endif
             }
-            if (PROFILING) {
+            #if PROFILING
                 end = std::chrono::system_clock::now();
                 query_seconds += end - start;
-            }
+            #endif
         }
     }
 
-    if (PROFILING) {
+    #if PROFILING
         std::cout << "buildBallTree time: " << buildballtree_seconds.count() << "s" << std::endl;
         std::cout << "query time: " << query_seconds.count() << "s" << std::endl;
         std::cout << "total time: " << (buildballtree_seconds + query_seconds).count() << "s" << std::endl;
-    }
+    #endif
 
     return result;
 }
@@ -428,7 +418,9 @@ void test_best_matches() {
     bestMatches.add(4.0, 4);
     bestMatches.add(3.0, 3);
     bestMatches.add(6.0, 6);
-    at::Tensor matches = bestMatches.getMatches(at::Device(at::kCPU));
+    at::Tensor matches = at::empty({3}, at::TensorOptions().dtype(at::ScalarType::Int));
+    auto matches_a = matches.accessor<int, 1>();
+    bestMatches.putMatchesInResult(matches_a);
     assert(matches[0].item<int>() == 10);
     assert(matches[1].item<int>() == 9);
     assert(matches[2].item<int>() == 8);
