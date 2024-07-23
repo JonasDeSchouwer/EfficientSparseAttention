@@ -330,7 +330,7 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
                     .device(keys.device())
                     .dtype(at::ScalarType::Int)
             );
-            BallTreePtr ballTree = buildBallTree(
+            BallTreePtr myBallTree = buildBallTree(
                 keys.index({b, h}),
                 indices,
                 maxLeafSize,
@@ -348,8 +348,12 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
                 num_threads = omp_get_num_threads();
             }
 
-            // --- query the ball tree for every query ---
+            // create a BestMatches object for each thread
             std::vector<BestMatches> bestMatchesVector(num_threads, BestMatches(k));
+            // create a ballTree copy for each thread
+            std::vector<BallTreePtr> ballTreeVector(num_threads, myBallTree);
+
+            // --- query the ball tree for every query ---
             #if PROFILING
                 start = std::chrono::system_clock::now();
             #endif
@@ -364,6 +368,7 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
                 
                 // the actual query
                 auto& bestMatches = bestMatchesVector[thread_id]; // Access the corresponding BestMatches object
+                auto& ballTree = ballTreeVector[thread_id]; // Access the corresponding BallTree object
                 auto [num_nodes_searched, num_keys_searched]
                     = ballTree->query(query, query_norm, bestMatches, k);
                 
