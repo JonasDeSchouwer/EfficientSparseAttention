@@ -12,7 +12,7 @@ setup(
                 # "-O0",  # Disable any optimizations
                 # "-fno-inline",  # Disable function inlining
                 "-O3",  # Enable optimizations
-                # "-fopenmp",  # Enable OpenMP
+                "-fopenmp",  # Enable OpenMP
             ],
         )
     ],

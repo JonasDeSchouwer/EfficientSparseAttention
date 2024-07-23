@@ -17,3 +17,5 @@ scratchpad.py
 keys-queries/
 profile
 test.py
+profiler.sh
+profiler-output.txt
