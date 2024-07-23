@@ -9,7 +9,7 @@
 
 #define DEBUG 0
 #define VERBOSE 0
-#define PROFILING 1
+#define PROFILING 0
 
 
 void printFlatIntTensor(at::Tensor t) {

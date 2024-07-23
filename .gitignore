@@ -13,8 +13,12 @@ scratchpad.py
 # vs code files
 .vscode/
 
+# Pycache
+**/__pycache__
+
 # Other
 keys-queries/
+kqv/
 profile
 test.py
 profiler.sh
