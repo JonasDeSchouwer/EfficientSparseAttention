@@ -8,7 +8,6 @@ slurm_directive="#!/bin/bash
 #SBATCH --nodes=1
 #SBATCH --output=output/${time}-%x-%j.out
 #SBATCH --error=output/${time}-%x-%j.err
-#SBATCH --mem=1TB
 "
 
 
@@ -26,6 +25,7 @@ sbatch <<EOT
 ${slurm_directive}
 #SBATCH --job-name=sparse_cpp
 #SBATCH --cpus-per-task=96
+#SBATCH --mem=1TB
 
 module load Anaconda3
 source activate graphgps
@@ -45,6 +45,7 @@ sbatch <<EOT
 ${slurm_directive}
 #SBATCH --job-name=sparse_sym_cpu
 #SBATCH --cpus-per-task=96
+#SBATCH --mem=1TB
 
 module load Anaconda3
 source activate graphgps
@@ -63,6 +64,7 @@ sbatch <<EOT
 ${slurm_directive}
 #SBATCH --job-name=full_attn_cpu
 #SBATCH --cpus-per-task=96
+#SBATCH --mem=1TB
 
 module load Anaconda3
 source activate graphgps
