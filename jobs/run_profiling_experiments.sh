@@ -1,4 +1,4 @@
-time=`date +%m-%d-%H:%M`
+time=`date +%m.%d-%H:%M`
 
 # everything except job-name, potential GPU resource
 slurm_directive="#!/bin/bash
@@ -74,7 +74,7 @@ lscpu
 /data/engs-oxnsg/lady6515/.conda/envs/graphgps/bin/python \
     profiling-experiment.py \
     --B ${B} --H ${H} --kq_dim ${kq_dim} --val_dim ${val_dim} \
-    --num_runs ${num_runs} --method full_attention
+    --num_runs ${num_runs} --method full
 EOT
 
 
@@ -114,7 +114,7 @@ nvidia-smi
 /data/engs-oxnsg/lady6515/.conda/envs/graphgps/bin/python \
     profiling-experiment.py \
     --B ${B} --H ${H} --kq_dim ${kq_dim} --val_dim ${val_dim} \
-    --num_runs ${num_runs} --method full_attention --device cuda
+    --num_runs ${num_runs} --method full --device cuda
 EOT
 
 
