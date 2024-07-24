@@ -18,7 +18,7 @@ kq_dim=50
 val_dim=50
 k=10
 maxLeafSize=10
-num_runs=5
+num_runs=10
 
 # sparse_cpp
 sbatch <<EOT

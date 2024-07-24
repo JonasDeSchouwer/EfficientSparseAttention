@@ -6,7 +6,7 @@ import argparse
 import time
 import numpy as np
 
-from baselines.symbolic_sparse import batched_symbolic_sparse_nearest_k_keys
+from baselines.symbolic_sparse import symbolic_sparse_nearest_k_keys
 from baselines.post_processing import batched_post_processing
 from baselines.full import batched_full_MHA
 
@@ -65,9 +65,11 @@ if args.device == "cuda":
     gpu_memories = [
         torch.cuda.get_device_properties(i).total_memory for i in range(num_gpus)
     ]  # in bytes
-    biggest_allocation_memory = (
+    biggest_allocation_memory = int(
         min(gpu_memories) / 2
     )  # in bytes, this determines the batch size. The /2 is to be on the safe side
+else:
+    biggest_allocation_memory = 1e12
 
 
 print("method:", method)
@@ -100,7 +102,7 @@ for N in Ns:
     elif method == "sparse_symbolic":
         print(
             "Batch size for key search:",
-            math.ceil(biggest_allocation_memory / (4 * N)),
+            "no batching! LazyTensors are never materialized",
         )
         print(
             "Batch size for post processing:",
@@ -140,8 +142,8 @@ for N in Ns:
         elif method in ("sparse_symbolic", "sparse_cpp"):
             begin = time.time()
             if method == "sparse_symbolic":
-                nearest_key_indices = batched_symbolic_sparse_nearest_k_keys(
-                    queries, keys, k, biggest_allocation_memory
+                nearest_key_indices = symbolic_sparse_nearest_k_keys(
+                    queries, keys, k
                 ).to(torch.int64)
             elif method == "sparse_cpp":
                 nearest_key_indices = sparse_attention.nearestKKeys(
