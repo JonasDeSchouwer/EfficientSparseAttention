@@ -1,4 +1,4 @@
-time=`date +%m-%d-%H:%M`
+time=`date +%m.%d-%H:%M`
 
 # everything except job-name, potential GPU resource
 slurm_directive="#!/bin/bash
@@ -31,9 +31,9 @@ module load Anaconda3
 source activate graphgps
 which python
 lscpu
-python setup.py build; python setup.py install --force
 
-python profiling-experiment.py \
+/data/engs-oxnsg/lady6515/.conda/envs/graphgps/bin/python \
+    profiling-experiment.py \
     --B ${B} --H ${H} --kq_dim ${kq_dim} --val_dim ${val_dim} \
     --k ${k} --maxLeafSize ${maxLeafSize} \
     --num_runs ${num_runs} --method sparse_cpp
@@ -51,9 +51,9 @@ module load Anaconda3
 source activate graphgps
 which python
 lscpu
-python setup.py build; python setup.py install --force
 
-python profiling-experiment.py \
+/data/engs-oxnsg/lady6515/.conda/envs/graphgps/bin/python \
+    profiling-experiment.py \
     --B ${B} --H ${H} --kq_dim ${kq_dim} --val_dim ${val_dim} \
     --num_runs ${num_runs} --method sparse_symbolic
 EOT
@@ -70,15 +70,15 @@ module load Anaconda3
 source activate graphgps
 which python
 lscpu
-python setup.py build; python setup.py install --force
 
-python profiling-experiment.py \
+/data/engs-oxnsg/lady6515/.conda/envs/graphgps/bin/python \
+    profiling-experiment.py \
     --B ${B} --H ${H} --kq_dim ${kq_dim} --val_dim ${val_dim} \
-    --num_runs ${num_runs} --method full_attention
+    --num_runs ${num_runs} --method full
 EOT
 
 
-# sparse symboolic GPU
+# sparse symbolic GPU
 sbatch <<EOT
 ${slurm_directive}
 #SBATCH --job-name=sparse_sym_gpu
@@ -90,9 +90,9 @@ source activate graphgps
 which python
 lscpu
 nvidia-smi
-python setup.py build; python setup.py install --force
 
-python profiling-experiment.py \
+/data/engs-oxnsg/lady6515/.conda/envs/graphgps/bin/python \
+    profiling-experiment.py \
     --B ${B} --H ${H} --kq_dim ${kq_dim} --val_dim ${val_dim} \
     --num_runs ${num_runs} --method sparse_symbolic --device cuda
 EOT
@@ -110,11 +110,11 @@ source activate graphgps
 which python
 lscpu
 nvidia-smi
-python setup.py build; python setup.py install --force
 
-python profiling-experiment.py \
+/data/engs-oxnsg/lady6515/.conda/envs/graphgps/bin/python \
+    profiling-experiment.py \
     --B ${B} --H ${H} --kq_dim ${kq_dim} --val_dim ${val_dim} \
-    --num_runs ${num_runs} --method full_attention --device cuda
+    --num_runs ${num_runs} --method full --device cuda
 EOT
 
 
