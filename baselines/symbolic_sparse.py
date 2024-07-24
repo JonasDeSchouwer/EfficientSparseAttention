@@ -4,7 +4,7 @@ import math
 
 
 def batched_symbolic_sparse_nearest_k_keys(
-    queries: torch.Tensor, keys: torch.Tensor, k
+    queries: torch.Tensor, keys: torch.Tensor, k, biggest_allocation_memory
 ) -> torch.Tensor:
     """
     Compute the nearest k keys for each query. Return their indices in a [B, H, N, k] tensor.
@@ -12,24 +12,29 @@ def batched_symbolic_sparse_nearest_k_keys(
     Args:
         queries: [B, H, N, kq_dim]
         keys: [B, H, N, kq_dim]
+        k: int
+        biggest_allocation_memory: int, the biggest possible allocation in bytes
 
     Returns:
         [B, H, N, k]
     """
-    N = keys.shape[-2]
+    B = queries.shape[0]
+    H = queries.shape[1]
+    N = queries.shape[2]
+
     batch_size = math.ceil(
-        1e10 / N
-    )  # choose batch size such that the number of elements in the LazyTensors is below 1e10
+        biggest_allocation_memory / (4 * N)
+    )  # choose batch size such that the number of bytes in the LazyTensors is below biggest_allocation_memory
     num_batches = math.ceil(N / batch_size)
 
-    nearest_key_indices = []
+    result = torch.empty((B, H, N, k), device=queries.device)
     for i in range(num_batches):
         queries_batch = queries[:, :, i * batch_size : (i + 1) * batch_size]
-        nearest_key_indices.append(
+        result[:, :, i * batch_size : (i + 1) * batch_size] = (
             symbolic_sparse_nearest_k_keys_(queries_batch, keys, k)
         )
 
-    return torch.cat(nearest_key_indices, dim=2)
+    return result
 
 
 def symbolic_sparse_nearest_k_keys_(

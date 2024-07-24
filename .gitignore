@@ -16,6 +16,9 @@ scratchpad.py
 # Pycache
 **/__pycache__
 
+# Job output
+output/
+
 # Other
 keys-queries/
 kqv/
@@ -23,3 +26,4 @@ profile
 test.py
 profiler.sh
 profiler-output.txt
+plotting.ipynb

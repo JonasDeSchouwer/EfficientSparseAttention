@@ -1,10 +1,15 @@
 import torch
+import torch.nn.functional as F
 from argparse import Namespace
 import math
+import time
 
 
-def full_MHA(
-    queries: torch.Tensor, keys: torch.Tensor, values: torch.Tensor
+def batched_full_MHA(
+    queries: torch.Tensor,
+    keys: torch.Tensor,
+    values: torch.Tensor,
+    biggest_allocation_memory: int,
 ) -> torch.Tensor:
     """
     Compute the output of a full multi-head attention layer.
@@ -13,15 +18,57 @@ def full_MHA(
         queries: [B, H, N, kq_dim]
         keys: [B, H, N, kq_dim]
         values: [B, H, N, val_dim]
+        biggest_allocation_memory: int, the biggest possible allocation in bytes
+
+    Returns:
+        [B, H, N, val_dim]
     """
 
-    kq_dim = queries.shape[-1]
-    # [B, H, N, N]
-    full_attention_weights = torch.einsum("bhqd,bhkd->bhqk", queries, keys) / math.sqrt(
-        kq_dim
-    )
+    N = keys.shape[-2]
+    batch_size = math.ceil(
+        biggest_allocation_memory / (4 * N)
+    )  # choose batch size such that the number of bytes in the LazyTensors is below biggest_allocation_memory
+    num_batches = math.ceil(N / batch_size)
 
-    # [B, H, N, val_dim]
+    result = torch.empty_like(values)
+    for i in range(num_batches):
+        queries_batch = queries[:, :, i * batch_size : (i + 1) * batch_size]
+
+        result[:, :, i * batch_size : (i + 1) * batch_size] = full_MHA_(
+            queries_batch, keys, values
+        )
+
+    return result
+
+
+def full_MHA_(
+    queries_batch: torch.Tensor,
+    keys: torch.Tensor,
+    values: torch.Tensor,
+) -> torch.Tensor:
+    """
+    Compute the output of a full multi-head attention layer.
+
+    Args:
+        queries_batch: [B, H, N_batch, kq_dim]
+        keys: [B, H, N, kq_dim]
+        values: [B, H, N, val_dim]
+    """
+
+    kq_dim = queries_batch.shape[-1]
+
+    # begin = time.time()
+    # [B, H, N_batch, N]
+    full_attention_weights = torch.einsum(
+        "bhqd,bhkd->bhqk", queries_batch, keys
+    ) / math.sqrt(kq_dim)
+    # print("Einsum time:", time.time() - begin)
+
+    # begin = time.time()
+    full_attention_weights = F.softmax(full_attention_weights, dim=-1)
+    # print("Softmax time:", time.time() - begin)
+
+    # [B, H, N_batch, val_dim]
     out = torch.einsum("bhqk,bhkd->bhqd", full_attention_weights, values)
 
     return out
