@@ -18,18 +18,20 @@ def symbolic_sparse_nearest_k_keys(
     """
     # --- Compute the nearest k keys: [**, num_heads, N, k] ---
 
-    # [**, num_heads, N, 1, kq_dim]
-    queries_extended: LazyTensor = LazyTensor(queries[..., :, :, None, :])
-    #  [**, num_heads, 1, N, kq_dim]
-    keys_extended: LazyTensor = LazyTensor(keys[..., :, None, :, :])
-    # [**, num_heads, N, N]
-    full_attention_weights: LazyTensor = (queries_extended * keys_extended).sum(
-        -1
-    )  # / math.sqrt(kq_dim) does not matter for ordering
+    with torch.no_grad():
 
-    # [**, num_heads, N, k]
-    ndims = len(full_attention_weights.shape)
-    assert ndims in [3, 4]
-    nearest_key_indices = (-full_attention_weights).argKmin(k, dim=ndims - 1)
+        # [**, num_heads, N, 1, kq_dim]
+        queries_extended: LazyTensor = LazyTensor(queries[..., :, :, None, :])
+        #  [**, num_heads, 1, N, kq_dim]
+        keys_extended: LazyTensor = LazyTensor(keys[..., :, None, :, :])
+        # [**, num_heads, N, N]
+        full_attention_weights: LazyTensor = (queries_extended * keys_extended).sum(
+            -1
+        )  # / math.sqrt(kq_dim) does not matter for ordering
 
-    return nearest_key_indices
+        # [**, num_heads, N, k]
+        ndims = len(full_attention_weights.shape)
+        assert ndims in [3, 4]
+        nearest_key_indices = (-full_attention_weights).argKmin(k, dim=ndims - 1)
+
+        return nearest_key_indices
