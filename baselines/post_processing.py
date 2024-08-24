@@ -87,11 +87,11 @@ def post_processing_(
     nearest_values = torch.gather(
         input=values.unsqueeze(-2).expand(
             *keys.shape[:-1], args.k, args.val_dim
-        ),  # [**, H, N, k, kq_dim]
+        ),  # [**, H, N, k, val_dim]
         dim=-3,
         index=nearest_key_indices_batch.unsqueeze(-1).expand(
             *nearest_key_indices_batch.shape, args.val_dim
-        ),  # [**, H, N_batch, k, kq_dim]
+        ),  # [**, H, N_batch, k, val_dim]
         # sparse_grad=True,
     )
     # [**, H, N_batch, k, kq_dim]

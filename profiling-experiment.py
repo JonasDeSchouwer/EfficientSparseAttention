@@ -6,9 +6,12 @@ import argparse
 import time
 import numpy as np
 
+from baselines.faiss import faiss_search
 from baselines.symbolic_sparse import symbolic_sparse_nearest_k_keys
 from baselines.post_processing import batched_post_processing
 from baselines.full import batched_full_MHA
+
+from baselines.torchpq import torchpq_search
 
 
 parser = argparse.ArgumentParser()
@@ -19,7 +22,9 @@ parser.add_argument("--val_dim", type=int, default=50)
 parser.add_argument("--k", type=int, default=10)
 parser.add_argument("--maxLeafSize", type=int, default=10)
 parser.add_argument(
-    "--method", type=str, choices=["sparse_symbolic", "sparse_cpp", "full"]
+    "--method",
+    type=str,
+    choices=["sparse_symbolic", "sparse_cpp", "full", "torchpq", "faiss"],
 )
 parser.add_argument("--maxN", type=int, default=1e9)
 parser.add_argument("--num_runs", type=int, default=5)
@@ -171,6 +176,22 @@ for N in Ns:
             run_attention_times.append(
                 run_key_search_times[-1] + run_post_processing_times[-1]
             )
+
+        elif method == "torchpq":
+            begin = time.time()
+            torchpq_search(queries, keys, k, biggest_allocation_memory)
+            if args.device == "cuda":
+                torch.cuda.synchronize()  # for accurate time measurement
+            end = time.time()
+            run_attention_times.append(end - begin)
+
+        elif method == "faiss":
+            begin = time.time()
+            faiss_search(queries, keys, k, biggest_allocation_memory)
+            if args.device == "cuda":
+                torch.cuda.synchronize()  # for accurate time measurement
+            end = time.time()
+            run_attention_times.append(end - begin)
 
         else:
             raise Exception(f"method {method} unknown")
