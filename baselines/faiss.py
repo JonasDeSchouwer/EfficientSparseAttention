@@ -9,6 +9,7 @@ def faiss_search(
     keys: torch.Tensor,
     k: int,
     biggest_allocation_memory: int,
+    device: str,
 ) -> torch.Tensor:
     """
     Compute the nearest k keys for each query. Return their indices in a [B, H, N, k] tensor.
@@ -47,23 +48,28 @@ def faiss_search(
             index_ivf = faiss.IndexIVFFlat(
                 quantizer, kq_dim, nlist, faiss.METRIC_INNER_PRODUCT
             )  # build a flat CPU index
-            gpu_index_ivf = faiss.index_cpu_to_gpu(res, 0, index_ivf)
+            if device == "cuda":
+                device_index_ivf = faiss.index_cpu_to_gpu(res, 0, index_ivf)
+            elif device == "cpu":
+                device_index_ivf = index_ivf
+            else:
+                raise ValueError(f"device {device} not supported")
 
-            assert not gpu_index_ivf.is_trained
+            assert not device_index_ivf.is_trained
             # Add the keys to the index
             begin = time.time()
-            gpu_index_ivf.train(keys_b_h)
+            device_index_ivf.train(keys_b_h)
             end = time.time()
             print("training:", end - begin)
-            assert gpu_index_ivf.is_trained
+            assert device_index_ivf.is_trained
 
             begin = time.time()
-            gpu_index_ivf.add(keys_b_h)
+            device_index_ivf.add(keys_b_h)
             end = time.time()
             print("adding:", end - begin)
 
             # Search the index
             begin = time.time()
-            topk_keys, topk_ids = gpu_index_ivf.search(queries_b_h, k=k)
+            topk_keys, topk_ids = device_index_ivf.search(queries_b_h, k=k)
             end = time.time()
             print("searching:", end - begin)

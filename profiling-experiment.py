@@ -177,7 +177,7 @@ for N in Ns:
 
         elif method == "faiss":
             begin = time.time()
-            faiss_search(queries, keys, k, biggest_allocation_memory)
+            faiss_search(queries, keys, k, biggest_allocation_memory, device=args.device)
             if args.device == "cuda":
                 torch.cuda.synchronize()  # for accurate time measurement
             end = time.time()
