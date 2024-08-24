@@ -15,7 +15,8 @@ do
 
 sbatch <<EOT
 #!/bin/bash
-#SBATCH --partition=devel
+#SBATCH --partition=short
+#SBATCH --time=2:00:00
 #SBATCH --cluster=arc
 #SBATCH --nodes=1
 #SBATCH --output=output/${time}-%x.out
