@@ -39,7 +39,7 @@ lscpu
 /data/engs-oxnsg/lady6515/.conda/envs/graphgps/bin/python \
     profiling-experiment.py \
     --B ${B} --H ${H} --kq_dim ${kq_dim} --val_dim ${val_dim} \
-    --num_runs ${num_runs} --method sparce_cpp --device ${device} --maxN ${maxN} \
+    --num_runs ${num_runs} --method sparse_cpp --device ${device} --maxN ${maxN} \
     --maxLeafSize ${maxLeafSize} --k ${k}
 EOT
 
