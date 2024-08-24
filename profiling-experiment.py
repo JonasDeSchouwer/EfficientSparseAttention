@@ -6,11 +6,6 @@ import argparse
 import time
 import numpy as np
 
-from baselines.faiss import faiss_search
-from baselines.symbolic_sparse import symbolic_sparse_nearest_k_keys
-from baselines.post_processing import batched_post_processing
-from baselines.full import batched_full_MHA
-
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--B", type=int, default=1)
@@ -29,6 +24,15 @@ parser.add_argument("--num_runs", type=int, default=5)
 parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"])
 parser.add_argument("--seed", type=int, default=0)
 args = parser.parse_args()
+
+
+# imports
+from baselines.symbolic_sparse import symbolic_sparse_nearest_k_keys
+from baselines.post_processing import batched_post_processing
+from baselines.full import batched_full_MHA
+# faiss is a conditional import, because it gives issues sometimes
+if args.method == "faiss":
+    from baselines.faiss import faiss_search
 
 
 # fix all seeds
