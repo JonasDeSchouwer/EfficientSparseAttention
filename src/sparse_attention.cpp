@@ -8,8 +8,9 @@
 
 
 #define DEBUG 0
-#define VERBOSE 1
+#define VERBOSE 0
 #define PROFILING 0
+#define LOG_NUM_SEARCHES 1
 
 
 void printFlatIntTensor(at::Tensor t) {
@@ -393,7 +394,7 @@ std::tuple<at::Tensor, int, int> nearestKKeys(at::Tensor queries, at::Tensor key
                     = ballTree->query(query, query_norm, bestMatches, k);
                 
                 // result processing
-                #if VERBOSE
+                #if LOG_NUM_SEARCHES
                     total_num_keys_searched += num_keys_searched;
                     total_num_nodes_searched += num_nodes_searched;
                     total_kth_best_dot_product += bestMatches.lowerBound();
