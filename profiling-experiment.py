@@ -61,7 +61,7 @@ Ns = [
     sqrt10 * 1e5,
     1e6,
 ]
-Ns = list(filter(lambda x: x < args.maxN, map(int, Ns)))
+Ns = list(filter(lambda x: x <= args.maxN, map(int, Ns)))
 
 if args.device == "cuda":
     num_gpus = torch.cuda.device_count()
@@ -72,7 +72,7 @@ if args.device == "cuda":
         min(gpu_memories) / 2
     )  # in bytes, this determines the batch size. The /2 is to be on the safe side
 else:
-    biggest_allocation_memory = 1e12
+    biggest_allocation_memory = 1e9
 
 
 print("method:", method)
@@ -93,6 +93,10 @@ key_search_times = []
 key_search_stds = []
 post_processing_times = []
 post_processing_stds = []
+num_keys_searched = []
+num_keys_searched_stds = []
+num_nodes_searched = []
+num_nodes_searched_stds = []
 
 
 print(f"--- Profiling method {method} ---")
@@ -117,6 +121,8 @@ for N in Ns:
     run_attention_times = []
     run_key_search_times = []
     run_post_processing_times = []
+    run_num_keys_searched = []
+    run_num_nodes_searched = []
 
     # --- main processing and profiling ---
     for run in range(num_runs + 1):
@@ -149,9 +155,12 @@ for N in Ns:
                     queries, keys, k
                 ).to(torch.int64)
             elif method == "sparse_cpp":
-                nearest_key_indices = sparse_attention.nearestKKeys(
+                nearest_key_indices, num_k_s, num_n_s = sparse_attention.nearestKKeys(
                     queries, keys, k, maxLeafSize
-                ).to(torch.int64)
+                )
+                nearest_key_indices = nearest_key_indices.to(torch.int64)
+                run_num_keys_searched.append(num_k_s)
+                run_num_nodes_searched.append(num_n_s)
             if args.device == "cuda":
                 torch.cuda.synchronize()  # for accurate time measurement
             end = time.time()
@@ -191,6 +200,9 @@ for N in Ns:
     if method in ("sparse_symbolic", "sparse_cpp"):
         run_key_search_times = run_key_search_times[1:]
         run_post_processing_times = run_post_processing_times[1:]
+    if method in ("sparse_cpp"):
+        run_num_keys_searched = run_num_keys_searched[1:]
+        run_num_nodes_searched = run_num_nodes_searched[1:]
 
     print("- Results for N =", N, "-")
     attention_times.append(np.mean(run_attention_times))
@@ -218,6 +230,11 @@ for N in Ns:
             "±",
             np.std(run_post_processing_times),
         )
+    if method in ("sparse_cpp"):
+        num_keys_searched.append(np.mean(run_num_keys_searched))
+        num_nodes_searched.append(np.mean(run_num_nodes_searched))
+        num_keys_searched_stds.append(np.std(run_num_keys_searched))
+        num_nodes_searched_stds.append(np.std(run_num_nodes_searched))
 
     print("\nAttention time means:", attention_times)
     print("Attention time stds:", attention_stds)
@@ -226,3 +243,8 @@ for N in Ns:
         print("Key search time stds:", key_search_stds)
         print("Post processing time means:", post_processing_times)
         print("Post processing time stds:", post_processing_stds)
+    if method in ("sparse_cpp"):
+        print("Num keys searched means:", num_keys_searched)
+        print("Num keys searched stds:", num_keys_searched_stds)
+        print("Num nodes searched means:", num_nodes_searched)
+        print("Num nodes searched stds:", num_nodes_searched_stds)

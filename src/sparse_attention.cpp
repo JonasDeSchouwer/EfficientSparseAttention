@@ -8,7 +8,7 @@
 
 
 #define DEBUG 0
-#define VERBOSE 0
+#define VERBOSE 1
 #define PROFILING 0
 
 
@@ -231,7 +231,22 @@ BallTreePtr buildBallTree(at::Tensor data, at::Tensor indices, int maxLeafSize, 
         // split the data into two parts
         auto [P, Q] = getTwoFarPoints(data);
 
+        // check if P == Q, this is highly unlikely but happens sometimes when kq_dim = 1
+        if ((P == Q).all().item<bool>()) {
+            #if DEBUG
+                std::cout << "P == Q" << std::endl;
+                std::cout << "N: " << N << std::endl;
+                std::cout << "data: " << data << std::endl;
+                std::cout << "indices: " << indices << std::endl;
+            #endif
+            currentNode.isLeafNode = true;
+            currentNode.data = data;
+            currentNode.indices = indices;
+            return std::make_shared<BallTree>(currentNode);
+        }
+
         // put the data into the left or right child
+        // note that it is guaranteed that P and Q each have at least one point, as P is always in the left child and Q is always in the right child
         at::Tensor left_mask = (data - P).pow(2).sum(1) < (data - Q).pow(2).sum(1);
         at::Tensor right_mask = ~left_mask;
 
@@ -277,12 +292,12 @@ std::pair<at::Tensor, at::Tensor> getTwoFarPoints(at::Tensor data) {
 }
 
 
-at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafSize) {
+std::tuple<at::Tensor, int, int> nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafSize) {
     /*
     queries: (B, H, Nq, kq_dim)
     keys: (B, H, Nk, kq_dim)
     k: int
-    return: (B, H, Nq, k)
+    return: [(B, H, Nq, k), num_keys_searched, num_nodes_searched]
     */ 
     int B = queries.size(0);
     int H = queries.size(1);
@@ -312,6 +327,10 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
             .device(queries.device())
     );
     auto result_a = result.accessor<int, 4>();
+
+    int total_num_keys_searched = 0;
+    int total_num_nodes_searched = 0;
+    float total_kth_best_dot_product = 0.0;
 
     // declarations of profiling variables
     #if PROFILING
@@ -348,6 +367,7 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
                 num_threads = omp_get_num_threads();
             }
 
+
             // create a BestMatches object for each thread
             std::vector<BestMatches> bestMatchesVector(num_threads, BestMatches(k));
             // create a ballTree copy for each thread
@@ -360,7 +380,7 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
             #pragma omp parallel for
             for (int n = 0; n < Nq; n++) {
                 int thread_id = omp_get_thread_num();
-                #if VERBOSE
+                #if DEBUG
                     std::cout << "Querying (" << b << ", " << h << ", " << n << "): " << std::endl;
                 #endif
                 at::Tensor query = queries.select(0, b).select(0, h).select(0, n);
@@ -374,6 +394,11 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
                 
                 // result processing
                 #if VERBOSE
+                    total_num_keys_searched += num_keys_searched;
+                    total_num_nodes_searched += num_nodes_searched;
+                    total_kth_best_dot_product += bestMatches.lowerBound();
+                #endif
+                #if DEBUG
                     float kth_best_dot_product = bestMatches.lowerBound();
                 #endif
                 bestMatches.putMatchesInResult(result_a[b][h][n]);
@@ -381,7 +406,7 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
                 #if DEBUG
                     ballTree->printMIPs(query, query_norm);
                 #endif
-                #if VERBOSE
+                #if DEBUG
                     std::cout << "Succeeded" << std::endl;
                     std::cout << num_keys_searched << "/" << Nk << " keys searched, and " << num_nodes_searched << "/" << ballTree->numNodes() << " nodes searched" << std::endl;
                     std::cout << "Resulting k'th best dot product: " << kth_best_dot_product << std::endl;
@@ -394,13 +419,23 @@ at::Tensor nearestKKeys(at::Tensor queries, at::Tensor keys, int k, int maxLeafS
         }
     }
 
+    total_num_keys_searched /= Nq * B * H;
+    total_num_nodes_searched /= Nq * B * H;
+    total_kth_best_dot_product /= Nq * B * H;
+
+    #if VERBOSE
+        std::cout << "Average number of keys searched: " << total_num_keys_searched << std::endl;
+        std::cout << "Average number of nodes searched: " << total_num_nodes_searched << std::endl;
+        std::cout << "Average k'th best dot product: " << total_kth_best_dot_product << std::endl;
+    #endif
+
     #if PROFILING
         std::cout << "buildBallTree time: " << buildballtree_seconds.count() << "s" << std::endl;
         std::cout << "query time: " << query_seconds.count() << "s" << std::endl;
         std::cout << "total time: " << (buildballtree_seconds + query_seconds).count() << "s" << std::endl;
     #endif
 
-    return result;
+    return std::tuple(result, total_num_keys_searched, total_num_nodes_searched);
 }
 
 
@@ -435,7 +470,7 @@ void test_best_matches() {
 void test_nearestKKeys() {
     at::Tensor queries = at::randn({2, 3, 1000, 5});
     at::Tensor keys = at::randn({2, 3, 1000, 5});
-    at::Tensor result = nearestKKeys(queries, keys, 3, 3);
+    auto [result, num_keys_searched, num_nodes_searched] = nearestKKeys(queries, keys, 3, 3);
 }
 
 void test_buildBallTree() {
