@@ -1,14 +1,5 @@
 time=`date +%m.%d-%H:%M`
 
-# everything except job-name
-slurm_directive="#!/bin/bash
-#SBATCH --partition=devel
-#SBATCH --cluster=htc
-#SBATCH --nodes=1
-#SBATCH --output=output/${time}-%x-%j.out
-#SBATCH --error=output/${time}-%x-%j.err
-"
-
 B=1
 H=5
 val_dim=50
@@ -27,8 +18,8 @@ sbatch <<EOT
 #SBATCH --partition=devel
 #SBATCH --cluster=arc
 #SBATCH --nodes=1
-#SBATCH --output=output/${time}-%j.out
-#SBATCH --error=output/${time}-%j.err
+#SBATCH --output=output/${time}-%x.out
+#SBATCH --error=output/${time}-%x.err
 #SBATCH --job-name=sparse_cpp_kq_${kq_dim}
 
 
