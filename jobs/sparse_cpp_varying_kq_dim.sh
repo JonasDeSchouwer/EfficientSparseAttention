@@ -23,6 +23,7 @@ for kq_dim in {1..10} {20..100..10}
 do
 
 sbatch <<EOT
+#!/bin/bash
 #SBATCH --partition=devel
 #SBATCH --cluster=arc
 #SBATCH --nodes=1
