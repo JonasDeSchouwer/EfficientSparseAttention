@@ -17,7 +17,7 @@ parser.add_argument("--maxLeafSize", type=int, default=10)
 parser.add_argument(
     "--method",
     type=str,
-    choices=["sparse_symbolic", "sparse_cpp", "full", "faiss"],
+    choices=["sparse_symbolic", "sparse_cpp", "full", "faiss", "full_builtin"],
 )
 parser.add_argument("--maxN", type=int, default=1e9)
 parser.add_argument("--num_runs", type=int, default=5)
@@ -149,6 +149,21 @@ for N in Ns:
             out = batched_full_MHA(queries, keys, values, biggest_allocation_memory)
             if args.device == "cuda":
                 torch.cuda.synchronize()  # for accurate time measurement
+            end = time.time()
+            run_attention_times.append(end - begin)
+
+        elif method == "full_builtin":
+            # is an end-to-end method, so we need to put the input in a different format
+            # IMPORTANT NOTE: only fairly comparable to the other methods when embed_dim = kq_dim = val_dim
+            dim = kq_dim
+            x = torch.randn(B,N, dim)
+
+            # when embed_dim = kq_dim = val_dim, fastpath inference is used. However, this only occurs when autograd is disabled, which is usually not the case.
+            multihead_attn = torch.nn.MultiheadAttention(embed_dim=dim, num_heads=H, batch_first=True, kdim=dim, vdim=dim).to(args.device)
+            begin = time.time()
+            out = multihead_attn(x,x,x)
+            if args.device == "cuda":
+                torch.cuda.synchronize() # for accurate time measurement
             end = time.time()
             run_attention_times.append(end - begin)
 

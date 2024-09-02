@@ -62,13 +62,18 @@ def full_MHA_(
     full_attention_weights = torch.einsum(
         "bhqd,bhkd->bhqk", queries_batch, keys
     ) / math.sqrt(kq_dim)
-    # print("Einsum time:", time.time() - begin)
+    # torch.cuda.synchronize()
+    # print("Einsum 1 time:", time.time() - begin)
 
     # begin = time.time()
     full_attention_weights = F.softmax(full_attention_weights, dim=-1)
+    # torch.cuda.synchronize()
     # print("Softmax time:", time.time() - begin)
 
     # [B, H, N_batch, val_dim]
+    # begin = time.time()
     out = torch.einsum("bhqk,bhkd->bhqd", full_attention_weights, values)
+    # torch.cuda.synchronize()
+    # print("Einsum 2 time:", time.time() - begin)
 
     return out
