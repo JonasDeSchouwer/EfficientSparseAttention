@@ -5,6 +5,8 @@ import time
 import argparse
 import time
 import numpy as np
+import datetime
+import os
 
 
 parser = argparse.ArgumentParser()
@@ -22,6 +24,8 @@ parser.add_argument(
 parser.add_argument("--maxN", type=int, default=1e9)
 parser.add_argument("--num_runs", type=int, default=5)
 parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"])
+parser.add_argument("--name", type=str, default="", help="Name of the experiment")
+parser.add_argument("--folder", type=str, default="")
 parser.add_argument("--seed", type=int, default=0)
 args = parser.parse_args()
 
@@ -78,6 +82,7 @@ if args.device == "cuda":
 else:
     biggest_allocation_memory = 1e9
 
+timestamp = datetime.datetime.now().strftime("%m.%d-%H:%M")
 
 print("method:", method)
 print("B:", B)
@@ -89,6 +94,9 @@ print("maxLeafSize:", maxLeafSize)
 print("num_runs:", num_runs)
 print("Ns:", Ns)
 print("device:", args.device)
+print("name:", args.name)
+print("folder:", args.folder)
+print("timestamp:", timestamp)
 
 
 attention_times = []
@@ -131,9 +139,9 @@ for N in Ns:
     # --- main processing and profiling ---
     for run in range(num_runs + 1):
         # generate queries and keys and save them to SAVE_DIR
-        queries = torch.randn((B, H, N, kq_dim))
-        keys = torch.randn((B, H, N, kq_dim))
-        values = torch.randn((B, H, N, val_dim))
+        queries = torch.randn((B, H, N, kq_dim), requires_grad=False)
+        keys = torch.randn((B, H, N, kq_dim), requires_grad=False)
+        values = torch.randn((B, H, N, val_dim), requires_grad=False)
 
         if args.device == "cuda":
             queries = queries.cuda()
@@ -156,7 +164,7 @@ for N in Ns:
             # is an end-to-end method, so we need to put the input in a different format
             # IMPORTANT NOTE: only fairly comparable to the other methods when embed_dim = kq_dim = val_dim
             dim = kq_dim
-            x = torch.randn(B,N, dim)
+            x = torch.randn(B,N, dim, device=args.device)
 
             # when embed_dim = kq_dim = val_dim, fastpath inference is used. However, this only occurs when autograd is disabled, which is usually not the case.
             multihead_attn = torch.nn.MultiheadAttention(embed_dim=dim, num_heads=H, batch_first=True, kdim=dim, vdim=dim).to(args.device)
@@ -267,3 +275,37 @@ for N in Ns:
         print("Num keys searched stds:", num_keys_searched_stds)
         print("Num nodes searched means:", num_nodes_searched)
         print("Num nodes searched stds:", num_nodes_searched_stds)
+
+    filename = f"output/{args.folder}/{method}-{args.name}-{timestamp}.out"
+    # Create the folder if it doesn't exist
+    os.makedirs(os.path.dirname(filename), exist_ok=True)
+
+    with open(filename, "w") as file:
+        file.write("Attention time means: " + str(attention_times) + "\n")
+        file.write("Attention time stds: " + str(attention_stds) + "\n\n")
+        if method in ("sparse_symbolic", "sparse_cpp"):
+            file.write("Key search time means: " + str(key_search_times) + "\n")
+            file.write("Key search time stds: " + str(key_search_stds) + "\n")
+            file.write("Post processing time means: " + str(post_processing_times) + "\n")
+            file.write("Post processing time stds: " + str(post_processing_stds) + "\n")
+        if method in ("sparse_cpp"):
+            file.write("Num keys searched means: " + str(num_keys_searched) + "\n")
+            file.write("Num keys searched stds: " + str(num_keys_searched_stds) + "\n")
+            file.write("Num nodes searched means: " + str(num_nodes_searched) + "\n")
+            file.write("Num nodes searched stds: " + str(num_nodes_searched_stds) + "\n")
+
+        file.write("\n" + "-"*20 + "\n\n")
+
+        file.write(f"method: {method}\n")
+        file.write(f"B: {B}\n")
+        file.write(f"H: {H}\n")
+        file.write(f"kq_dim: {kq_dim}\n")
+        file.write(f"val_dim: {val_dim}\n")
+        file.write(f"k: {k}\n")
+        file.write(f"maxLeafSize: {maxLeafSize}\n")
+        file.write(f"num_runs: {num_runs}\n")
+        file.write(f"Ns: {Ns}\n")
+        file.write(f"device: {args.device}\n")
+        file.write(f"name: {args.name}\n")
+        file.write(f"folder: {args.folder}\n")
+        file.write(f"timestamp: {timestamp}\n")
