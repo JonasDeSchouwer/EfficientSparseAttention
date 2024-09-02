@@ -13,6 +13,7 @@ setup(
                 # "-fno-inline",  # Disable function inlining
                 "-O3",  # Enable optimizations
                 "-fopenmp",  # Enable OpenMP
+                "-std=c++17"
             ],
         )
     ],

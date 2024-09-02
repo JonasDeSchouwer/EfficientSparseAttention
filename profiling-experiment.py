@@ -12,7 +12,7 @@ import os
 parser = argparse.ArgumentParser()
 parser.add_argument("--B", type=int, default=1)
 parser.add_argument("--H", type=int, default=1)
-parser.add_argument("--kq_dim", type=int, default=50)
+parser.add_argument("--kq_dim", type=int, default=16)
 parser.add_argument("--val_dim", type=int, default=50)
 parser.add_argument("--k", type=int, default=10)
 parser.add_argument("--maxLeafSize", type=int, default=10)

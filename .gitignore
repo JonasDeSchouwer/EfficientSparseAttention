@@ -27,3 +27,4 @@ test.py
 profiler.sh
 profiler-output.txt
 plotting.ipynb
+run/test.sh
