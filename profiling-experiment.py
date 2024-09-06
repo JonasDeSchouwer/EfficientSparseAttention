@@ -25,12 +25,15 @@ parser.add_argument("--maxN", type=int, default=1e9)
 parser.add_argument("--num_runs", type=int, default=5)
 parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"])
 parser.add_argument("--name", type=str, default="", help="Name of the experiment")
-parser.add_argument("--folder", type=str, default="")
+parser.add_argument("--folder", type=str, default="random")
 parser.add_argument("--seed", type=int, default=0)
+parser.add_argument("--track_approx", action="store_true")
+parser.add_argument("--detailed_profiling", action="store_true")
 args = parser.parse_args()
 
 
 # imports
+from utils import rowwise_recall
 from baselines.symbolic_sparse import symbolic_sparse_nearest_k_keys
 from baselines.post_processing import batched_post_processing
 from baselines.full import batched_full_MHA
@@ -56,6 +59,8 @@ k = args.k
 maxLeafSize = args.maxLeafSize
 num_runs = args.num_runs
 method = args.method
+track_approx = args.track_approx
+detailed_profiling = args.detailed_profiling
 
 sqrt10 = math.sqrt(10)
 Ns = [
@@ -97,6 +102,8 @@ print("device:", args.device)
 print("name:", args.name)
 print("folder:", args.folder)
 print("timestamp:", timestamp)
+print("track_approx:", track_approx)
+print("detailed_profiling:", detailed_profiling)
 
 
 attention_times = []
@@ -109,6 +116,7 @@ num_keys_searched = []
 num_keys_searched_stds = []
 num_nodes_searched = []
 num_nodes_searched_stds = []
+approximation_qualities = []
 
 
 print(f"--- Profiling method {method} ---")
@@ -135,6 +143,7 @@ for N in Ns:
     run_post_processing_times = []
     run_num_keys_searched = []
     run_num_nodes_searched = []
+    run_approximation_qualities = []
 
     # --- main processing and profiling ---
     for run in range(num_runs + 1):
@@ -159,6 +168,7 @@ for N in Ns:
                 torch.cuda.synchronize()  # for accurate time measurement
             end = time.time()
             run_attention_times.append(end - begin)
+            print("attention time:", end - begin)
 
         elif method == "full_builtin":
             # is an end-to-end method, so we need to put the input in a different format
@@ -174,6 +184,7 @@ for N in Ns:
                 torch.cuda.synchronize() # for accurate time measurement
             end = time.time()
             run_attention_times.append(end - begin)
+            print("attention time:", end - begin)
 
         elif method in ("sparse_symbolic", "sparse_cpp"):
             begin = time.time()
@@ -210,14 +221,28 @@ for N in Ns:
             run_attention_times.append(
                 run_key_search_times[-1] + run_post_processing_times[-1]
             )
+            print("attention time:", run_attention_times[-1])
 
         elif method == "faiss":
             begin = time.time()
-            faiss_search(queries, keys, k, biggest_allocation_memory, device=args.device)
+            topk_faiss = faiss_search(
+                queries, keys, k,
+                biggest_allocation_memory,
+                device=args.device,
+                detailed_profiling=detailed_profiling)
             if args.device == "cuda":
                 torch.cuda.synchronize()  # for accurate time measurement
             end = time.time()
             run_attention_times.append(end - begin)
+            print("attention time:", end - begin)
+
+            if track_approx:
+                topk_sym = symbolic_sparse_nearest_k_keys(
+                    queries, keys, k
+                ).to(torch.int64)
+                run_approximation_qualities.append(
+                    rowwise_recall(topk_faiss, topk_sym).mean().item()
+                )
 
         else:
             raise Exception(f"method {method} unknown")
@@ -262,6 +287,8 @@ for N in Ns:
         num_nodes_searched.append(np.mean(run_num_nodes_searched))
         num_keys_searched_stds.append(np.std(run_num_keys_searched))
         num_nodes_searched_stds.append(np.std(run_num_nodes_searched))
+    if method == "faiss" and track_approx:
+        approximation_qualities.append(np.mean(run_approximation_qualities))
 
     print("\nAttention time means:", attention_times)
     print("Attention time stds:", attention_stds)
@@ -275,8 +302,10 @@ for N in Ns:
         print("Num keys searched stds:", num_keys_searched_stds)
         print("Num nodes searched means:", num_nodes_searched)
         print("Num nodes searched stds:", num_nodes_searched_stds)
+    if method == "faiss" and track_approx:
+        print("Approximation qualities:", approximation_qualities)
 
-    filename = f"output/{args.folder}/{method}-{args.name}-{timestamp}.out"
+    filename = f"profiling-output/{args.folder}/{method}-{args.name}-{timestamp}.out"
     # Create the folder if it doesn't exist
     os.makedirs(os.path.dirname(filename), exist_ok=True)
 
@@ -293,6 +322,8 @@ for N in Ns:
             file.write("Num keys searched stds: " + str(num_keys_searched_stds) + "\n")
             file.write("Num nodes searched means: " + str(num_nodes_searched) + "\n")
             file.write("Num nodes searched stds: " + str(num_nodes_searched_stds) + "\n")
+        if method == "faiss" and track_approx:
+            file.write("Approximation qualities: " + str(approximation_qualities) + "\n")
 
         file.write("\n" + "-"*20 + "\n\n")
 
@@ -309,3 +340,5 @@ for N in Ns:
         file.write(f"name: {args.name}\n")
         file.write(f"folder: {args.folder}\n")
         file.write(f"timestamp: {timestamp}\n")
+        file.write(f"track_approx: {track_approx}\n")
+        file.write(f"detailed_profiling: {detailed_profiling}\n")

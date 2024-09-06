@@ -17,6 +17,7 @@ scratchpad.py
 **/__pycache__
 
 # Job output
+profiling-output/
 output/
 
 # Other
