@@ -318,7 +318,6 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
 
     
     if args.experiment_type == 'approximation':
-        num_graphs = 3
         if args.qkv == 'Cifar10':
             max_N = 200
             min_N = 80
