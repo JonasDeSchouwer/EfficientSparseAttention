@@ -23,7 +23,7 @@ parser.add_argument(
 )
 parser.add_argument("--maxN", type=int, default=1e9)
 parser.add_argument("--num_runs", type=int, default=5)
-parser.add_argument("--device", type=str, default="cpu", choices=["cpu", "cuda"])
+parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"])
 parser.add_argument("--name", type=str, default="", help="Name of the experiment")
 parser.add_argument("--folder", type=str, default="random")
 parser.add_argument("--seed", type=int, default=0)

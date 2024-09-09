@@ -19,6 +19,7 @@ scratchpad.py
 # Job output
 profiling-output/
 output/
+approx-output/
 
 # Other
 keys-queries/

@@ -14,3 +14,11 @@ def rowwise_recall(pred, target):
     rowwise_recall = torch.sum(rowwise_isin, dim=-1).float() / target.size(-1)
 
     return rowwise_recall
+
+
+def all_equal(l: list):
+    """
+    All elements are equal
+    But some elements are more equal than others
+    """
+    return all(x == l[0] for x in l)
