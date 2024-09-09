@@ -22,3 +22,18 @@ def all_equal(l: list):
     But some elements are more equal than others
     """
     return all(x == l[0] for x in l)
+
+def get_rounded_geometric_progression(alpha, max, start=1):
+    """
+    Returns a list of (unique) numbers in a geometric progression, rounded to the nearest integer.
+    """
+    assert max >= start
+    assert alpha > 1
+
+    result = [start]
+    current = start
+    while current < max:
+        if round(current) != result[-1]:
+            result.append(round(current))
+        current *= alpha
+    return result

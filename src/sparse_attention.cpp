@@ -10,7 +10,7 @@
 #define DEBUG 0
 #define VERBOSE 0
 #define PROFILING 0
-#define LOG_NUM_SEARCHES 1
+#define LOG_NUM_SEARCHES 0
 
 
 void printFlatIntTensor(at::Tensor t) {
@@ -337,7 +337,7 @@ std::tuple<at::Tensor, int, int> nearestKKeys(at::Tensor queries, at::Tensor key
     #if PROFILING
         std::chrono::duration<double> buildballtree_seconds, query_seconds;
     #endif
-    #pragma omp parallel for collapse(2)
+    // #pragma omp parallel for collapse(2) schedule(dynamic)
     for (int b = 0; b < B; b++) {
         for (int h = 0; h < H; h++) {
             // create ball tree of the keys
@@ -378,7 +378,7 @@ std::tuple<at::Tensor, int, int> nearestKKeys(at::Tensor queries, at::Tensor key
             #if PROFILING
                 start = std::chrono::system_clock::now();
             #endif
-            #pragma omp parallel for
+            #pragma omp parallel for schedule(dynamic)
             for (int n = 0; n < Nq; n++) {
                 int thread_id = omp_get_thread_num();
                 #if DEBUG

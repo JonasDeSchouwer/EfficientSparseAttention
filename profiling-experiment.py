@@ -21,7 +21,7 @@ parser.add_argument(
     type=str,
     choices=["sparse_symbolic", "sparse_cpp", "full", "faiss", "full_builtin"],
 )
-parser.add_argument("--maxN", type=int, default=1e9)
+parser.add_argument("--maxN", type=int, default=1e6)
 parser.add_argument("--num_runs", type=int, default=5)
 parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"])
 parser.add_argument("--name", type=str, default="", help="Name of the experiment")
@@ -73,6 +73,12 @@ Ns = [
     1e5,
     sqrt10 * 1e5,
     1e6,
+    sqrt10 * 1e6,
+    1e7,
+    sqrt10 * 1e7,
+    1e8,
+    sqrt10 * 1e8,
+    1e9,
 ]
 Ns = list(filter(lambda x: x <= args.maxN, map(int, Ns)))
 

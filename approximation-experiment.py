@@ -49,7 +49,7 @@ if args.qkv == 'malnet':
 
 
 # imports
-from utils import rowwise_recall, all_equal
+from utils import rowwise_recall, all_equal, get_rounded_geometric_progression
 from baselines.symbolic_sparse import symbolic_sparse_nearest_k_keys
 from baselines.post_processing import batched_post_processing
 from baselines.full import batched_full_MHA
@@ -109,8 +109,8 @@ print("trained_model_type:", args.trained_model_type)
 print("experiment_type:", args.experiment_type)
 
 
-
-def get_full_weights(queries, keys):
+@torch.no_grad()
+def get_full_cum_weights(queries, keys):
     """
     q,k: (1,H,N,kq_dim)
 
@@ -136,6 +136,80 @@ def get_full_weights(queries, keys):
     return avg_attention_weight
 
 
+@torch.no_grad()
+def get_full_approx_qualities(queries, keys, values, ks):
+    """
+    queries, keys: (1,H,N,kq_dim)
+    values: (1,H,N,val_dim)
+    ks: (#ks,)
+
+    returns: (#ks,): entry i is the (average) L2 distance when k-MIP attention is performed with k=i
+    """
+    N = keys.shape[-2]
+    result = torch.zeros(len(ks), dtype=torch.float32)
+
+    full_out = batched_full_MHA(queries, keys, values, biggest_allocation_memory)
+
+    full_attention_weights = torch.einsum("...ik,...jk->...ij", queries, keys)
+
+    # [**, num_heads, N, k]
+    _, nearest_key_indices = full_attention_weights.sort(dim=-1)
+    
+    # [**, H, N, N, kq_dim]
+    nearest_keys = torch.gather(
+        input=keys.unsqueeze(-2).expand(
+            *keys.shape[:-1], N, args.kq_dim
+        ),  # [**, H, N, N, kq_dim]
+        dim=-3,
+        index=nearest_key_indices.unsqueeze(-1).expand(
+            *nearest_key_indices.shape, args.kq_dim
+        ),  # [**, H, N, N, kq_dim]
+        # sparse_grad=True,
+    )
+
+    # [**, H, N, N, val_dim]
+    nearest_values = torch.gather(
+        input=values.unsqueeze(-2).expand(
+            *keys.shape[:-1], N, args.val_dim
+        ),  # [**, H, N, N, val_dim]
+        dim=-3,
+        index=nearest_key_indices.unsqueeze(-1).expand(
+            *nearest_key_indices.shape, args.val_dim
+        ),  # [**, H, N, N, val_dim]
+        # sparse_grad=True,
+    )
+
+    # [**, H, N, N, kq_dim]
+    queries_extended = queries.unsqueeze(-2).expand(
+        *queries.shape[:-1], N, args.kq_dim
+    )
+    # [**, H, N, N]
+    # attention weights before softmax
+    weights = (queries_extended * nearest_keys).sum(-1) / math.sqrt(
+        args.kq_dim
+    )
+    # [**, H, N, N]
+    exp_weights = torch.exp(weights)
+    # [**, H, N, N]
+    cum_sum_exp_weights = exp_weights.cumsum(dim=-1)
+
+    for k_id, k in enumerate(ks):
+        if k > N:
+            continue
+        # [**, H, N, k]
+        approx_attention_weights = exp_weights[..., :k] / cum_sum_exp_weights[..., k].unsqueeze(-1)
+        # [**, H, N, val_dim]
+        approx_out = torch.einsum(
+            "...ik,...ikj->...ij",
+            approx_attention_weights,
+            nearest_values[..., :k, :]
+        )
+
+        result[k_id] = (full_out - approx_out).norm(dim=-1).mean().item()
+
+    return result
+
+@torch.no_grad()
 def compare_to_full(queries, keys, values):
     """
     q,k: (1,H,N,kq_dim)
@@ -244,31 +318,64 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
 
     
     if args.experiment_type == 'approximation':
-        l2_distances = torch.empty(len(Ks), len(layers), num_graphs)
-
-        for k_id, k in enumerate(Ks):
-            print(f"\n--- K={k} ---")
-            for layer_id, layer in enumerate(layers):
-                for token_file in tqdm(os.listdir(osp.join(token_dir, layer))):
-                    graph_id = int(token_file.split('.')[0])
-                    token_dict = torch.load(osp.join(token_dir, layer, token_file))
-                    queries = token_dict['q']
-                    keys = token_dict['k']
-                    values = token_dict['v']
-
-                    args.k = k
-                    out_dict = compare_to_full(queries, keys, values)
-                    l2_distances[k_id,layer_id, graph_id] = out_dict['l2_diff']
+        num_graphs = 3
+        if args.qkv == 'Cifar10':
+            max_N = 200
+            min_N = 80
+        elif args.qkv == 'MalNet-Tiny':
+            max_N = 5000
+            min_N = 1000
+        else:
+            raise ValueError(f"Unknown qkv type {args.qkv}")
         
-            # average l2 distances over all graphs
-            avg_l2_distances = l2_distances.mean(dim=-1)
-            for layer_id, layer in enumerate(layers):
-                print(f"Layer {layer}: {avg_l2_distances[k_id, layer_id]}")
+        ks = get_rounded_geometric_progression(alpha=1.2, max=max_N) + [max_N]
+        print("ks:", ks)
+        # will accumulate the l2 distances
+        l2_distances = torch.zeros(len(layers), num_graphs, len(ks), dtype=torch.float32)
+        l2_distances_normal = torch.zeros(len(layers), num_graphs, len(ks), dtype=torch.float32)
 
-        # average l2 distances over all graphs
-        avg_l2_distances = l2_distances.mean(dim=-1)
         for layer_id, layer in enumerate(layers):
-            print(f"Layer {layer}: {avg_l2_distances[:, layer_id]}")
+            num_graphs_in_N_range = 0
+            for token_file in tqdm(os.listdir(osp.join(token_dir, layer))[:num_graphs]):
+                token_dict = torch.load(osp.join(token_dir, layer, token_file))
+                queries, keys, values = token_dict['q'], token_dict['k'], token_dict['v']
+
+                N = queries.shape[-2]
+                if N < min_N or N > max_N:
+                    continue
+
+                l2_distances[layer_id, num_graphs_in_N_range] = get_full_approx_qualities(queries, keys, values, ks)
+
+                # if we assume that queries and keys are normally distributed, and the graph also has N nodes
+                queries = torch.randn_like(queries)
+                keys = torch.randn_like(keys)
+                values = torch.randn_like(values)
+
+                l2_distances_normal[layer_id, num_graphs_in_N_range] = get_full_approx_qualities(queries, keys, values, ks)
+
+                num_graphs_in_N_range += 1
+
+            print(num_graphs_in_N_range)
+        
+
+        l2_distances = l2_distances[:, :num_graphs_in_N_range]
+        l2_distances_normal = l2_distances_normal[:, :num_graphs_in_N_range]
+
+        # averaging over all graphs
+        # [num_layers, max_N]
+        avg_l2_distances = l2_distances.mean(dim=1)
+        avg_l2_distances_normal = l2_distances_normal.mean(dim=1)
+        std_l2_distances = l2_distances.std(dim=1)
+        std_l2_distances_normal = l2_distances_normal.std(dim=1)
+
+        # save attention weights
+        torch.save(l2_distances, osp.join('approx-output', f'full_l2_distances_{timestamp}.pt'))
+        torch.save(l2_distances_normal, osp.join('approx-output', f'full_l2_distances_normal_{timestamp}.pt'))
+        torch.save(avg_l2_distances, osp.join('approx-output', f'avg_l2_distances_{timestamp}.pt'))
+        torch.save(avg_l2_distances_normal, osp.join('approx-output', f'avg_l2_distances_normal_{timestamp}.pt'))
+        torch.save(std_l2_distances, osp.join('approx-output', f'std_l2_distances_{timestamp}.pt'))
+        torch.save(std_l2_distances_normal, osp.join('approx-output', f'std_l2_distances_normal_{timestamp}.pt'))
+        torch.save(ks, osp.join('approx-output', f'ks_{timestamp}.pt'))
     
     elif args.experiment_type == 'softmax_weights':
         if args.qkv == 'Cifar10':
@@ -296,14 +403,14 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
                 if N < min_N or N > max_N:
                     continue
 
-                attention_weights_single = get_full_weights(queries, keys)
+                attention_weights_single = get_full_cum_weights(queries, keys)
                 attention_weights[layer_id, num_graphs_in_N_range, :N] = attention_weights_single
 
                 # if we assume that queries and keys are normally distributed, and the graph also has N nodes
                 queries = torch.randn_like(queries)
                 keys = torch.randn_like(keys)
 
-                attention_weights_normal_single = get_full_weights(queries, keys)
+                attention_weights_normal_single = get_full_cum_weights(queries, keys)
                 attention_weights_normal[layer_id, num_graphs_in_N_range, :N] = attention_weights_normal_single
 
                 num_graphs_in_N_range += 1
