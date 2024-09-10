@@ -1,7 +1,6 @@
 from matplotlib import pyplot as plt
 import torch
 import torch.nn.functional as F
-import sparse_attention
 import math
 import time
 import argparse
@@ -53,7 +52,9 @@ from utils import rowwise_recall, all_equal, get_rounded_geometric_progression
 from baselines.symbolic_sparse import symbolic_sparse_nearest_k_keys
 from baselines.post_processing import batched_post_processing
 from baselines.full import batched_full_MHA
-# faiss is a conditional import, because it gives issues sometimes
+# faiss and sparse_attention are conditional imports, because they give issues sometimes
+if args.method == "sparse_cpp":
+    import sparse_attention
 if args.method == "faiss":
     from baselines.faiss import faiss_search
 
