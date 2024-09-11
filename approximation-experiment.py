@@ -20,7 +20,7 @@ parser.add_argument("--maxLeafSize", type=int, default=10)
 parser.add_argument(
     "--method",
     type=str,
-    choices=["sparse_symbolic", "sparse_cpp", "full", "faiss", "full_builtin"],
+    choices=["sparse_symbolic", "sparse_cpp", "full", "faiss", "full_builtin", "random"],
 )
 
 # experiment arguments
@@ -135,6 +135,21 @@ def get_full_cum_weights(queries, keys):
     avg_attention_weight = full_attention_weights.mean(dim=(0,1,2))
 
     return avg_attention_weight
+
+@torch.no_grad()
+def get_full_approx_qualities_with_random(queries, keys, values) -> float:
+    """
+    queries, keys: (1,H,N,kq_dim)
+    values: (1,H,N,val_dim)
+    ks: (#ks,)
+
+    returns: float: the (average) L2 distance when the output is approximated with a random tensor, sampled from a normal distribution
+    """
+    full_out = batched_full_MHA(queries, keys, values, biggest_allocation_memory)
+
+    approx_out = torch.randn_like(full_out)
+
+    return (full_out - approx_out).norm(dim=-1).mean().item()
 
 
 @torch.no_grad()
@@ -343,15 +358,21 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
                 N = queries.shape[-2]
                 if N < min_N or N > max_N:
                     continue
-
-                l2_distances[layer_id, num_graphs_in_N_range] = get_full_approx_qualities(queries, keys, values, ks)
+                
+                if args.method != "random":
+                    l2_distances[layer_id, num_graphs_in_N_range] = get_full_approx_qualities(queries, keys, values, ks)
+                else:
+                    l2_distances[layer_id, num_graphs_in_N_range, 0] = get_full_approx_qualities_with_random(queries, keys, values)
 
                 # if we assume that queries and keys are normally distributed, and the graph also has N nodes
                 queries = torch.randn_like(queries)
                 keys = torch.randn_like(keys)
                 values = torch.randn_like(values)
 
-                l2_distances_normal[layer_id, num_graphs_in_N_range] = get_full_approx_qualities(queries, keys, values, ks)
+                if args.method != "random":
+                    l2_distances_normal[layer_id, num_graphs_in_N_range] = get_full_approx_qualities(queries, keys, values, ks)
+                else:
+                    l2_distances_normal[layer_id, num_graphs_in_N_range, 0] = get_full_approx_qualities_with_random(queries, keys, values)
 
                 num_graphs_in_N_range += 1
 

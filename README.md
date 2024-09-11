@@ -18,4 +18,5 @@ pip install pykeops
 Optional:
 ```
 pip install ipykernel
+pip install matplotlib
 ```
