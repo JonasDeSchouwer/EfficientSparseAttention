@@ -483,6 +483,8 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
         recalls = torch.zeros(len(layers), num_graphs, dtype=torch.float32)
         # will accumulate the recalls if we follow the assumption that queries and keys are normally distributed, and graphs have the same size
         recalls_normal = torch.zeros(len(layers), num_graphs, dtype=torch.float32)
+        # will accumulate the runtimes
+        runtimes = torch.zeros(len(layers), num_graphs, dtype=torch.float32)
 
         for layer_id, layer in enumerate(layers):
             num_graphs_in_N_range = 0
@@ -500,14 +502,24 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
                 true_top_k = symbolic_sparse_nearest_k_keys(queries, keys, args.k)
                 true_top_k_normal = symbolic_sparse_nearest_k_keys(queries_normal, keys_normal, args.k)
                 
+                begin = time.time()
                 if args.method == "faiss":
                     top_k = faiss_search(queries, keys, args.k, biggest_allocation_memory, device=args.device, nlist=args.nlist, nprobe=args.nprobe, detailed_profiling=args.detailed_profiling)
+                    if args.device == "cuda":
+                        torch.cuda.synchronize()
+                    end = time.time()
                     top_k_normal = faiss_search(queries_normal, keys_normal, args.k, biggest_allocation_memory, device=args.device, nlist=args.nlist, nprobe=args.nprobe, detailed_profiling=args.detailed_profiling)
                 elif args.method == "sparse_symbolic":
                     top_k = symbolic_sparse_nearest_k_keys(queries, keys, args.k)
+                    if args.device == "cuda":
+                        torch.cuda.synchronize()
+                    end = time.time()
                     top_k_normal = symbolic_sparse_nearest_k_keys(queries_normal, keys_normal, args.k)
                 elif args.method in ("full", "full_builtin"):
                     top_k = torch.topk(torch.einsum("bhqd,bhkd->bhqk", queries, keys), args.k, dim=-1).indices
+                    if args.device == "cuda":
+                        torch.cuda.synchronize()
+                    end = time.time()
                     top_k_normal = torch.topk(torch.einsum("bhqd,bhkd->bhqk", queries_normal, keys_normal), args.k, dim=-1).indices
                 else:
                     raise ValueError(f"Unknown method {args.method}")
@@ -515,24 +527,30 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
                 # get the recall
                 recalls[layer_id, num_graphs_in_N_range] = rowwise_recall(true_top_k, top_k).mean().item()
                 recalls_normal[layer_id, num_graphs_in_N_range] = rowwise_recall(true_top_k_normal, top_k_normal).mean().item()
+                # get the time
+                runtimes[layer_id, num_graphs_in_N_range] = end - begin
 
                 num_graphs_in_N_range += 1
 
             print(f"{layer}:", recalls[layer_id].mean().item())
             print(f"{layer} normal:", recalls_normal[layer_id].mean().item())
+            print(f"{layer} runtime:", runtimes[layer_id].mean().item())
 
         # average over graphs
         avg_recalls = recalls.mean(dim=-1)
         avg_recalls_normal = recalls_normal.mean(dim=-1)
+        avg_runtimes = runtimes.mean(dim=-1)
 
         # print for each layer
         for layer_id, layer in enumerate(layers):
             print(f"{layer}: {avg_recalls[layer_id]}")
             print(f"{layer} normal: {avg_recalls_normal[layer_id]}")
+            print(f"{layer} runtime: {avg_runtimes[layer_id]}")
 
         # print overall average
         print(f"Overall: {avg_recalls.mean()}")
         print(f"Overall normal: {avg_recalls_normal.mean()}")
+        print(f"Overall runtime: {avg_runtimes.mean()}")
 
     else:
         raise ValueError(f"Unknown experiment type {args.experiment}")

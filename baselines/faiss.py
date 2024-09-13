@@ -99,7 +99,7 @@ def faiss_search(
                 end = time.time()
                 print("putting keys on cpu:", end - begin)
 
-             # Train the index on the keys of the first head of the first graph
+            # Train the index on the keys of the first head of the first graph
             device_index_ivf.cp.min_points_per_centroid = 1 # to silence the warning about too few training points
             begin = time.time()
             device_index_ivf.train(keys[b,h].cpu().numpy())
