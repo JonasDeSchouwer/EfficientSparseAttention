@@ -3,7 +3,7 @@ import faiss
 import numpy as np
 import time
 
-
+@torch.no_grad()
 def faiss_search(
     queries: torch.Tensor,
     keys: torch.Tensor,
@@ -47,7 +47,43 @@ def faiss_search(
     if nprobe is None:
         nprobe = 30
 
+
+    # --- Create the index ---
+    begin = time.time()
+    quantizer = faiss.IndexFlat(kq_dim)
+    # quantizer.reserve(N)    # reserve memory for N vectors
+    index_ivf = faiss.IndexIVFFlat(
+        quantizer, kq_dim, nlist, faiss.METRIC_INNER_PRODUCT
+    )  # build a flat CPU index
+    index_ivf.nprobe = nprobe
+    index_ivf.set_direct_map_type(faiss.DirectMap.Hashtable)
+    if device == "cuda":
+        device_index_ivf = faiss.index_cpu_to_gpu(
+            provider=res,
+            device=0,
+            index=index_ivf
+    )
+    elif device == "cpu":
+        device_index_ivf = index_ivf
+    else:
+        raise ValueError(f"device {device} not supported")
+    if detailed_profiling:
+        torch.cuda.synchronize()
+        end = time.time()
+        print("creating index:", end - begin)
+    device_index_ivf.verbose = False    # silence the warning about too few training points
+
+    # Train the index on the keys of the first head of the first graph
+    device_index_ivf.cp.min_points_per_centroid = 5 # to silence the warning about too few training points
+    begin = time.time()
+    device_index_ivf.train(keys[0,0].cpu().numpy())
+    end = time.time()
+    if detailed_profiling:
+        torch.cuda.synchronize()
+        print("training:", end - begin)
+
     topk_ids = np.empty((B, H, N, k), dtype=np.int64)
+
 
     for b in range(B):
         for h in range(H):
@@ -58,33 +94,6 @@ def faiss_search(
                 torch.cuda.synchronize()
                 end = time.time()
                 print("putting keys on cpu:", end - begin)
-
-            # Create the index
-            quantizer = faiss.IndexFlatL2(kq_dim)
-            index_ivf = faiss.IndexIVFFlat(
-                quantizer, kq_dim, nlist, faiss.METRIC_INNER_PRODUCT
-            )  # build a flat CPU index
-            index_ivf.nprobe = nprobe
-            if device == "cuda":
-                device_index_ivf = faiss.index_cpu_to_gpu(
-                    provider=res,
-                    device=0,
-                    index=index_ivf
-            )
-            elif device == "cpu":
-                device_index_ivf = index_ivf
-            else:
-                raise ValueError(f"device {device} not supported")
-
-            assert not device_index_ivf.is_trained
-            # Add the keys to the index
-            begin = time.time()
-            device_index_ivf.train(keys_b_h)
-            end = time.time()
-            if detailed_profiling:
-                torch.cuda.synchronize()
-                print("training:", end - begin)
-            assert device_index_ivf.is_trained
 
             begin = time.time()
             device_index_ivf.add(keys_b_h)
@@ -111,3 +120,10 @@ def faiss_search(
         print("putting topk_ids on device:", end - begin)
 
     return topk_ids
+
+
+def create_index(index_type: str, parameters: dict):
+    if index_type == "faiss":
+        return FaissIndex(parameters)
+    else:
+        raise ValueError(f"index_type {index_type} not supported")

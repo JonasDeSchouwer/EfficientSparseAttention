@@ -20,6 +20,7 @@ parser.add_argument(
     type=str,
     choices=["sparse_symbolic", "sparse_cpp", "full", "faiss", "full_builtin"],
 )
+parser.add_argument("--minN", type=int, default=1e2)
 parser.add_argument("--maxN", type=int, default=1e6)
 parser.add_argument("--num_runs", type=int, default=5)
 parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"])
@@ -28,6 +29,8 @@ parser.add_argument("--folder", type=str, default="random")
 parser.add_argument("--seed", type=int, default=0)
 parser.add_argument("--track_approx", action="store_true")
 parser.add_argument("--detailed_profiling", action="store_true")
+parser.add_argument("--nlist", type=int, default=None)
+parser.add_argument("--nprobe", type=int, default=None)
 args = parser.parse_args()
 
 
@@ -48,7 +51,7 @@ torch.manual_seed(args.seed)
 np.random.seed(args.seed)
 if args.device == "cuda":
     torch.cuda.manual_seed(args.seed)
-    torch.backends.cudnn.deterministic = True
+    torch.backends.cudnn.deterministic = False
     torch.backends.cudnn.benchmark = False
 
 
@@ -81,7 +84,7 @@ Ns = [
     sqrt10 * 1e8,
     1e9,
 ]
-Ns = list(filter(lambda x: x <= args.maxN, map(int, Ns)))
+Ns = list(filter(lambda x: args.minN <= x <= args.maxN, map(int, Ns)))
 
 if args.device == "cuda":
     num_gpus = torch.cuda.device_count()
@@ -111,6 +114,8 @@ print("folder:", args.folder)
 print("timestamp:", timestamp)
 print("track_approx:", track_approx)
 print("detailed_profiling:", detailed_profiling)
+print("nlist:", args.nlist)
+print("nprobe:", args.nprobe)
 
 
 attention_times = []
@@ -170,7 +175,7 @@ for N in Ns:
 
         if method == "full":
             begin = time.time()
-            out = batched_full_MHA(queries, keys, values, biggest_allocation_memory)
+            out = batched_full_MHA(queries, keys, values, biggest_allocation_memory, detailed_profiling)
             if args.device == "cuda":
                 torch.cuda.synchronize()  # for accurate time measurement
             end = time.time()
@@ -236,7 +241,9 @@ for N in Ns:
                 queries, keys, k,
                 biggest_allocation_memory,
                 device=args.device,
-                detailed_profiling=detailed_profiling)
+                detailed_profiling=detailed_profiling,
+                nlist=args.nlist,
+                nprobe=args.nprobe,)
             if args.device == "cuda":
                 torch.cuda.synchronize()  # for accurate time measurement
             end = time.time()
@@ -249,6 +256,10 @@ for N in Ns:
                 ).to(torch.int64)
                 run_approximation_qualities.append(
                     rowwise_recall(topk_faiss, topk_sym).mean().item()
+                )
+                print(
+                    "approximation quality:",
+                    run_approximation_qualities[-1],
                 )
 
         else:
@@ -349,3 +360,5 @@ for N in Ns:
         file.write(f"timestamp: {timestamp}\n")
         file.write(f"track_approx: {track_approx}\n")
         file.write(f"detailed_profiling: {detailed_profiling}\n")
+        file.write(f"nlist: {args.nlist}\n")
+        file.write(f"nprobe: {args.nprobe}\n")

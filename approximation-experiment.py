@@ -36,7 +36,9 @@ parser.add_argument("--detailed_profiling", action="store_true")
 parser.add_argument("--qkv", type=str, default="random", choices=["cifar", "malnet"])
 parser.add_argument("--qkv_seed", type=int, default=0)
 parser.add_argument("--trained_model_type", type=str, default="GPS+SparseAttention", choices=["GPS+SparseAttention", "GPS+Transformer"])
-parser.add_argument("--experiment_type", type=str, default="approximation", choices=["approximation", "softmax_weights"])
+parser.add_argument("--experiment", type=str, default="approximation", choices=["approximation", "softmax_weights", "search"])
+parser.add_argument("--nlist", type=int, default=None)
+parser.add_argument("--nprobe", type=int, default=None)
 
 args = parser.parse_args()
 
@@ -107,7 +109,9 @@ print("detailed_profiling:", args.detailed_profiling)
 print("qkv:", args.qkv)
 print("qkv_seed:", args.qkv_seed)
 print("trained_model_type:", args.trained_model_type)
-print("experiment_type:", args.experiment_type)
+print("experiment:", args.experiment)
+print("nlist:", args.nlist)
+print("nprobe:", args.nprobe)
 
 
 @torch.no_grad()
@@ -333,7 +337,7 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
     args.val_dim = val_dim
 
     
-    if args.experiment_type == 'approximation':
+    if args.experiment == 'approximation':
         if args.qkv == 'Cifar10':
             max_N = 200
             min_N = 80
@@ -398,7 +402,7 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
         torch.save(std_l2_distances_normal, osp.join('approx-output', f'std_l2_distances_normal_{timestamp}.pt'))
         torch.save(ks, osp.join('approx-output', f'ks_{timestamp}.pt'))
     
-    elif args.experiment_type == 'softmax_weights':
+    elif args.experiment == 'softmax_weights':
         if args.qkv == 'Cifar10':
             max_N = 200
             min_N = 80
@@ -464,5 +468,68 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
         plt.legend()
         plt.show()
 
+
+    elif args.experiment == 'search':
+        if args.qkv == 'Cifar10':
+            max_N = 200
+            min_N = 80
+        elif args.qkv == 'MalNet-Tiny':
+            max_N = 5000
+            min_N = 1000
+        else:
+            raise ValueError(f"Unknown qkv type {args.qkv}")
+        
+        # will accumulate the recalls
+        recalls = torch.zeros(len(layers), num_graphs, dtype=torch.float32)
+        # will accumulate the recalls if we follow the assumption that queries and keys are normally distributed, and graphs have the same size
+        recalls_normal = torch.zeros(len(layers), num_graphs, dtype=torch.float32)
+        
+        for layer_id, layer in enumerate(layers):
+            num_graphs_in_N_range = 0
+            for token_file in tqdm(os.listdir(osp.join(token_dir, layer))[:num_graphs]):
+                token_dict = torch.load(osp.join(token_dir, layer, token_file))
+                queries = token_dict['q']
+                keys = token_dict['k']
+                queries_normal = torch.randn_like(queries)
+                keys_normal = torch.randn_like(keys)
+
+                N = queries.shape[-2]
+                if N < min_N or N > max_N:
+                    continue
+
+                true_top_k = symbolic_sparse_nearest_k_keys(queries, keys, args.k)
+                true_top_k_normal = symbolic_sparse_nearest_k_keys(queries_normal, keys_normal, args.k)
+                
+                if args.method == "faiss":
+                    top_k = faiss_search(queries, keys, args.k, biggest_allocation_memory, device=args.device, nlist=args.nlist, nprobe=args.nprobe, detailed_profiling=args.detailed_profiling)
+                    top_k_normal = faiss_search(queries_normal, keys_normal, args.k, biggest_allocation_memory, device=args.device, nlist=args.nlist, nprobe=args.nprobe, detailed_profiling=args.detailed_profiling)
+                elif args.method == "sparse_symbolic":
+                    top_k = symbolic_sparse_nearest_k_keys(queries, keys, args.k)
+                    top_k_normal = symbolic_sparse_nearest_k_keys(queries_normal, keys_normal, args.k)
+                elif args.method in ("full", "full_builtin"):
+                    top_k = torch.topk(torch.einsum("bhqd,bhkd->bhqk", queries, keys), args.k, dim=-1).indices
+                    top_k_normal = torch.topk(torch.einsum("bhqd,bhkd->bhqk", queries_normal, keys_normal), args.k, dim=-1).indices
+                else:
+                    raise ValueError(f"Unknown method {args.method}")
+                
+                # get the recall
+                recalls[layer_id, num_graphs_in_N_range] = rowwise_recall(true_top_k, top_k).mean().item()
+                recalls_normal[layer_id, num_graphs_in_N_range] = rowwise_recall(true_top_k_normal, top_k_normal).mean().item()
+
+                num_graphs_in_N_range += 1
+
+        # average over graphs
+        avg_recalls = recalls.mean(dim=-1)
+        avg_recalls_normal = recalls_normal.mean(dim=-1)
+
+        # print for each layer
+        for layer_id, layer in enumerate(layers):
+            print(f"{layer}: {avg_recalls[layer_id]}")
+            print(f"{layer} normal: {avg_recalls_normal[layer_id]}")
+
+        # print overall average
+        print(f"Overall: {avg_recalls.mean()}")
+        print(f"Overall normal: {avg_recalls_normal.mean()}")
+
     else:
-        raise ValueError(f"Unknown experiment type {args.experiment_type}")
+        raise ValueError(f"Unknown experiment type {args.experiment}")

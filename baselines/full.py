@@ -10,6 +10,7 @@ def batched_full_MHA(
     keys: torch.Tensor,
     values: torch.Tensor,
     biggest_allocation_memory: int,
+    detailed_profiling=False,
 ) -> torch.Tensor:
     """
     Compute the output of a full multi-head attention layer.
@@ -19,6 +20,7 @@ def batched_full_MHA(
         keys: [B, H, N, kq_dim]
         values: [B, H, N, val_dim]
         biggest_allocation_memory: int, the biggest possible allocation in bytes
+        detailed_profiling: bool, whether to print detailed profiling information
 
     Returns:
         [B, H, N, val_dim]
@@ -35,7 +37,7 @@ def batched_full_MHA(
         queries_batch = queries[:, :, i * batch_size : (i + 1) * batch_size]
 
         result[:, :, i * batch_size : (i + 1) * batch_size] = full_MHA_(
-            queries_batch, keys, values
+            queries_batch, keys, values, detailed_profiling
         )
 
     return result
@@ -45,6 +47,7 @@ def full_MHA_(
     queries_batch: torch.Tensor,
     keys: torch.Tensor,
     values: torch.Tensor,
+    detailed_profiling: bool,
 ) -> torch.Tensor:
     """
     Compute the output of a full multi-head attention layer.
@@ -53,27 +56,31 @@ def full_MHA_(
         queries_batch: [B, H, N_batch, kq_dim]
         keys: [B, H, N, kq_dim]
         values: [B, H, N, val_dim]
+        detailed_profiling: bool, whether to print detailed profiling information
     """
 
     kq_dim = queries_batch.shape[-1]
 
-    # begin = time.time()
+    begin = time.time()
     # [B, H, N_batch, N]
     full_attention_weights = torch.einsum(
         "bhqd,bhkd->bhqk", queries_batch, keys
     ) / math.sqrt(kq_dim)
-    # torch.cuda.synchronize()
-    # print("Einsum 1 time:", time.time() - begin)
+    if detailed_profiling:
+        torch.cuda.synchronize()
+        print("Einsum 1 time:", time.time() - begin)
 
-    # begin = time.time()
+    begin = time.time()
     full_attention_weights = F.softmax(full_attention_weights, dim=-1)
-    # torch.cuda.synchronize()
-    # print("Softmax time:", time.time() - begin)
+    if detailed_profiling:
+        torch.cuda.synchronize()
+        print("Softmax time:", time.time() - begin)
 
     # [B, H, N_batch, val_dim]
-    # begin = time.time()
+    begin = time.time()
     out = torch.einsum("bhqk,bhkd->bhqd", full_attention_weights, values)
-    # torch.cuda.synchronize()
-    # print("Einsum 2 time:", time.time() - begin)
+    if detailed_profiling:
+        torch.cuda.synchronize()
+        print("Einsum 2 time:", time.time() - begin)
 
     return out
