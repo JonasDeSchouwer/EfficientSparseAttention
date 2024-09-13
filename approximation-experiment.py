@@ -516,6 +516,9 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
                 recalls[layer_id, num_graphs_in_N_range] = rowwise_recall(true_top_k, top_k).mean().item()
                 recalls_normal[layer_id, num_graphs_in_N_range] = rowwise_recall(true_top_k_normal, top_k_normal).mean().item()
 
+                print(f"{layer}:", recalls[layer_id].mean().item())
+                print(f"{layer} normal:", recalls_normal[layer_id].mean().item())
+
                 num_graphs_in_N_range += 1
 
         # average over graphs
