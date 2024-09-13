@@ -283,6 +283,8 @@ def compare_to_full(queries, keys, values):
 
 
     elif args.method == "faiss":
+        raise NotImplementedError("Faiss is not implemented yet for this experiment")
+
         begin = time.time()
         topk_faiss = faiss_search(
             queries, keys, args.k,
@@ -293,14 +295,6 @@ def compare_to_full(queries, keys, values):
             torch.cuda.synchronize()  # for accurate time measurement
         end = time.time()
         output['attention_time'] = end - begin
-
-        # if track_approx:
-        #     topk_sym = symbolic_sparse_nearest_k_keys(
-        #         queries, keys, k
-        #     ).to(torch.int64)
-        #     run_approximation_qualities.append(
-        #         rowwise_recall(topk_faiss, topk_sym).mean().item()
-        #     )
 
     print(full_out - out)
 
@@ -322,9 +316,9 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
     num_graphs = num_graphs_per_layer[0]
 
     sample_token = torch.load(osp.join(token_dir, layers[0], '0.pt'))
-    queries = sample_token['q']
-    keys = sample_token['k']
-    values = sample_token['v']
+    queries = sample_token['q'].to(args.device)
+    keys = sample_token['k'].to(args.device)
+    values = sample_token['v'].to(args.device)
 
     _, H, _, kq_dim = queries.shape
     _, _, _, val_dim = values.shape
@@ -357,7 +351,7 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
             num_graphs_in_N_range = 0
             for token_file in tqdm(os.listdir(osp.join(token_dir, layer))[:num_graphs]):
                 token_dict = torch.load(osp.join(token_dir, layer, token_file))
-                queries, keys, values = token_dict['q'], token_dict['k'], token_dict['v']
+                queries, keys, values = token_dict['q'].to(args.device), token_dict['k'].to(args.device), token_dict['v'].to(args.device)
 
                 N = queries.shape[-2]
                 if N < min_N or N > max_N:
@@ -421,8 +415,8 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
             num_graphs_in_N_range = 0
             for token_file in tqdm(os.listdir(osp.join(token_dir, layer))[:num_graphs]):
                 token_dict = torch.load(osp.join(token_dir, layer, token_file))
-                queries = token_dict['q']
-                keys = token_dict['k']
+                queries = token_dict['q'].to(args.device)
+                keys = token_dict['k'].to(args.device)
 
                 N = queries.shape[-2]
                 if N < min_N or N > max_N:
@@ -490,8 +484,8 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
             num_graphs_in_N_range = 0
             for token_file in tqdm(os.listdir(osp.join(token_dir, layer))[:num_graphs]):
                 token_dict = torch.load(osp.join(token_dir, layer, token_file))
-                queries = token_dict['q']
-                keys = token_dict['k']
+                queries = token_dict['q'].to(args.device)
+                keys = token_dict['k'].to(args.device)
                 queries_normal = torch.randn_like(queries)
                 keys_normal = torch.randn_like(keys)
 
