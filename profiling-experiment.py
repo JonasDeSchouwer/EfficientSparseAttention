@@ -27,7 +27,7 @@ parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"
 parser.add_argument("--name", type=str, default="", help="Name of the experiment")
 parser.add_argument("--folder", type=str, default="random")
 parser.add_argument("--seed", type=int, default=0)
-parser.add_argument("--track_approx", action="store_true")
+parser.add_argument("--no-track_approx", action="store_false", dest="track_approx")
 parser.add_argument("--detailed_profiling", action="store_true")
 parser.add_argument("--nlist", type=int, default=None)
 parser.add_argument("--nprobe", type=int, default=None)

@@ -47,14 +47,20 @@ def faiss_search(
     if nprobe is None:
         nprobe = 30
 
+    num_sub_quantizers = kq_dim  # should be a divisor of the vector dimension
+    nbits_per_subquantizer = 8
+
 
     # --- Create the index ---
     begin = time.time()
-    quantizer = faiss.IndexFlatL2(kq_dim)
+    quantizer = faiss.IndexFlatIP(kq_dim)
     # quantizer.reserve(N)    # reserve memory for N vectors
     index_ivf = faiss.IndexIVFFlat(
         quantizer, kq_dim, nlist, faiss.METRIC_INNER_PRODUCT
-    )  # build a flat CPU index
+    )
+    # index_ivf = faiss.IndexIVFPQ(
+    #     quantizer, kq_dim, nlist, num_sub_quantizers, nbits_per_subquantizer, faiss.METRIC_INNER_PRODUCT
+    # )
     index_ivf.nprobe = nprobe
     index_ivf.set_direct_map_type(faiss.DirectMap.Hashtable)
     if device == "cuda":
@@ -79,6 +85,13 @@ def faiss_search(
     for b in range(B):
         for h in range(H):
             begin = time.time()
+            device_index_ivf.reset()    # clears the contents but keeps any learned parameters from training
+            if detailed_profiling:
+                torch.cuda.synchronize()
+                end = time.time()
+                print("resetting index:", end - begin)
+
+            begin = time.time()
             keys_b_h = keys[b, h].cpu().numpy()
             queries_b_h = queries[b, h].cpu().numpy()
             if detailed_profiling:
@@ -87,7 +100,7 @@ def faiss_search(
                 print("putting keys on cpu:", end - begin)
 
              # Train the index on the keys of the first head of the first graph
-            device_index_ivf.cp.min_points_per_centroid = 5 # to silence the warning about too few training points
+            device_index_ivf.cp.min_points_per_centroid = 1 # to silence the warning about too few training points
             begin = time.time()
             device_index_ivf.train(keys[b,h].cpu().numpy())
             end = time.time()
