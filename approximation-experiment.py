@@ -483,7 +483,7 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
         recalls = torch.zeros(len(layers), num_graphs, dtype=torch.float32)
         # will accumulate the recalls if we follow the assumption that queries and keys are normally distributed, and graphs have the same size
         recalls_normal = torch.zeros(len(layers), num_graphs, dtype=torch.float32)
-        
+
         for layer_id, layer in enumerate(layers):
             num_graphs_in_N_range = 0
             for token_file in tqdm(os.listdir(osp.join(token_dir, layer))[:num_graphs]):
@@ -516,10 +516,10 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
                 recalls[layer_id, num_graphs_in_N_range] = rowwise_recall(true_top_k, top_k).mean().item()
                 recalls_normal[layer_id, num_graphs_in_N_range] = rowwise_recall(true_top_k_normal, top_k_normal).mean().item()
 
-                print(f"{layer}:", recalls[layer_id].mean().item())
-                print(f"{layer} normal:", recalls_normal[layer_id].mean().item())
-
                 num_graphs_in_N_range += 1
+
+            print(f"{layer}:", recalls[layer_id].mean().item())
+            print(f"{layer} normal:", recalls_normal[layer_id].mean().item())
 
         # average over graphs
         avg_recalls = recalls.mean(dim=-1)
