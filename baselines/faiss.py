@@ -77,10 +77,17 @@ def faiss_search(
         torch.cuda.synchronize()
         end = time.time()
         print("creating index:", end - begin)
-    device_index_ivf.verbose = False    # silence the warning about too few training points
+
+     # Train the index on the keys of the first head of the first graph
+    device_index_ivf.cp.min_points_per_centroid = 1 # to silence the warning about too few training points
+    begin = time.time()
+    device_index_ivf.train(keys[0,0].cpu().numpy())
+    end = time.time()
+    if detailed_profiling:
+        torch.cuda.synchronize()
+        print("training:", end - begin)
 
     topk_ids = np.empty((B, H, N, k), dtype=np.int64)
-
 
     for b in range(B):
         for h in range(H):
@@ -98,15 +105,6 @@ def faiss_search(
                 torch.cuda.synchronize()
                 end = time.time()
                 print("putting keys on cpu:", end - begin)
-
-            # Train the index on the keys of the first head of the first graph
-            device_index_ivf.cp.min_points_per_centroid = 1 # to silence the warning about too few training points
-            begin = time.time()
-            device_index_ivf.train(keys[b,h].cpu().numpy())
-            end = time.time()
-            if detailed_profiling:
-                torch.cuda.synchronize()
-                print("training:", end - begin)
 
             begin = time.time()
             device_index_ivf.add(keys_b_h)
