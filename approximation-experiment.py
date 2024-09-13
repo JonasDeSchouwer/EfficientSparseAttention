@@ -527,8 +527,8 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
                 num_graphs_in_N_range += 1
 
             print(f"{layer}:", recalls[layer_id].sum().item() / num_graphs_in_N_range)
-            print(f"{layer} normal:", recalls_normal[layer_id].sum().item() / num_graphs_in_N_range))
-            print(f"{layer} runtime:", runtimes[layer_id].sum().item() / num_graphs_in_N_range))
+            print(f"{layer} normal:", recalls_normal[layer_id].sum().item() / num_graphs_in_N_range)
+            print(f"{layer} runtime:", runtimes[layer_id].sum().item() / num_graphs_in_N_range)
 
         recalls = recalls[:, :num_graphs_in_N_range]
         recalls_normal = recalls_normal[:, :num_graphs_in_N_range]
