@@ -29,7 +29,7 @@ def batched_full_MHA(
     N = keys.shape[-2]
     batch_size = math.ceil(
         biggest_allocation_memory / (4 * N)
-    )  # choose batch size such that the number of bytes in the LazyTensors is below biggest_allocation_memory
+    )  # choose batch size such that the number of bytes in the tensors is below biggest_allocation_memory
     num_batches = math.ceil(N / batch_size)
 
     result = torch.empty_like(values)

@@ -20,7 +20,7 @@ parser.add_argument("--maxLeafSize", type=int, default=10)
 parser.add_argument(
     "--method",
     type=str,
-    choices=["sparse_symbolic", "sparse_cpp", "full", "faiss", "full_builtin", "random"],
+    choices=["sym", "sparse_cpp", "full", "faiss", "full_builtin", "random"],
 )
 
 # experiment arguments
@@ -247,9 +247,9 @@ def compare_to_full(queries, keys, values):
 
     full_out = batched_full_MHA(queries, keys, values, biggest_allocation_memory)
 
-    if args.method in ("sparse_symbolic", "sparse_cpp"):
+    if args.method in ("sym", "sparse_cpp"):
         begin = time.time()
-        if args.method == "sparse_symbolic":
+        if args.method == "sym":
             nearest_key_indices = symbolic_sparse_nearest_k_keys(
                 queries, keys, args.k
             ).to(torch.int64)
@@ -503,7 +503,7 @@ if args.qkv in ('Cifar10', 'MalNet-Tiny'):
                         torch.cuda.synchronize()
                     end = time.time()
                     top_k_normal = faiss_search(queries_normal, keys_normal, args.k, biggest_allocation_memory, device=args.device, nlist=args.nlist, nprobe=args.nprobe, detailed_profiling=args.detailed_profiling)
-                elif args.method == "sparse_symbolic":
+                elif args.method == "sym":
                     top_k = symbolic_sparse_nearest_k_keys(queries, keys, args.k)
                     if args.device == "cuda":
                         torch.cuda.synchronize()
