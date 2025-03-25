@@ -31,6 +31,7 @@ conda install pyg=2.0.4 -c pyg -c conda-forge
 
 conda install pytorch::faiss-gpu==1.8.0
 pip install pykeops matplotlib
+pip install flash-attn
 
 # installs the Ball Tree Search C++ extension
 python setup.py build; python setup.py install

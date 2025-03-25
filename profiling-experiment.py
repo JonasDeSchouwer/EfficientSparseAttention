@@ -18,7 +18,7 @@ parser.add_argument("--maxLeafSize", type=int, default=10)
 parser.add_argument(
     "--method",
     type=str,
-    choices=["sym", "naive", "sparse_cpp", "full", "faiss", "full_builtin"],
+    choices=["sym", "naive", "sparse_cpp", "full", "faiss", "full_builtin", "flash_attn"],
 )
 parser.add_argument("--minN", type=int, default=1e2)
 parser.add_argument("--maxN", type=int, default=1e6)
@@ -42,6 +42,7 @@ from methods.naive_sparse import batched_naive_sparse_nearest_k_keys
 from methods.symbolic_sparse import symbolic_sparse_nearest_k_keys
 from methods.post_processing import batched_post_processing
 from methods.full import batched_full_MHA
+from methods.flash_attn import flash_attn_mech
 # faiss and sparse_attention are conditional imports, because they give issues sometimes
 if args.method == "sparse_cpp":
     import sparse_attention
@@ -289,6 +290,14 @@ for N in Ns:
                     run_approximation_qualities[-1],
                 )
 
+        elif method == "flash_attn":
+            begin = time.time()
+            out = flash_attn_mech(queries, keys, values)
+            if args.device == "cuda":
+                torch.cuda.synchronize()
+            end = time.time()
+            run_attention_times.append(end - begin)
+            print("attention time:", end - begin)
         else:
             raise Exception(f"method {method} unknown")
         
