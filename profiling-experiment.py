@@ -8,6 +8,7 @@ import datetime
 import os
 
 
+
 parser = argparse.ArgumentParser()
 parser.add_argument("--B", type=int, default=1)
 parser.add_argument("--H", type=int, default=1)
@@ -33,6 +34,7 @@ parser.add_argument("--nlist", type=int, default=None)
 parser.add_argument("--nprobe", type=int, default=None)
 parser.add_argument("--do_backward", action="store_true")
 parser.add_argument("--require_grad", action="store_true")
+parser.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "fp16", "bf16"], help="Data type for tensors")
 args = parser.parse_args()
 
 
@@ -41,13 +43,13 @@ from utils import rowwise_recall
 from methods.naive_sparse import batched_naive_sparse_nearest_k_keys
 from methods.symbolic_sparse import symbolic_sparse_nearest_k_keys
 from methods.post_processing import batched_post_processing
-from methods.full import batched_full_MHA
-from methods.flash_attn import flash_attn_mech
-# faiss and sparse_attention are conditional imports, because they give issues sometimes
+from methods.full import batched_full_MHA# faiss and sparse_attention are conditional imports, because they give issues sometimes
 if args.method == "sparse_cpp":
     import sparse_attention
 if args.method == "faiss":
     from methods.faiss import faiss_search
+if args.method == "flash_attn":
+    from methods.flash_attn import flash_attn_mech
 
 
 # fix all seeds
@@ -121,6 +123,7 @@ print("detailed_profiling:", detailed_profiling)
 print("nlist:", args.nlist)
 print("nprobe:", args.nprobe)
 print("do_backward:", args.do_backward)
+print("dtype:", args.dtype)
 
 
 attention_times = []
@@ -140,6 +143,18 @@ num_keys_searched_stds = []
 num_nodes_searched = []
 num_nodes_searched_stds = []
 approximation_qualities = []
+
+
+def get_torch_dtype(dtype_str: str) -> torch.dtype:
+    """Convert dtype string to torch dtype."""
+    if dtype_str == "fp32":
+        return torch.float32
+    elif dtype_str == "fp16":
+        return torch.float16
+    elif dtype_str == "bf16":
+        return torch.bfloat16
+    else:
+        raise ValueError(f"Unsupported dtype: {dtype_str}")
 
 
 print(f"--- Profiling method {method} ---")
@@ -174,9 +189,9 @@ for N in Ns:
     # --- main processing and profiling ---
     for run in range(num_runs + 1):
         # generate queries and keys and save them to SAVE_DIR
-        queries = torch.randn((B, H, N, kq_dim), requires_grad=args.do_backward or args.require_grad)
-        keys = torch.randn((B, H, N, kq_dim), requires_grad=args.do_backward or args.require_grad)
-        values = torch.randn((B, H, N, val_dim), requires_grad=args.do_backward or args.require_grad)
+        queries = torch.randn((B, H, N, kq_dim), requires_grad=args.do_backward or args.require_grad, dtype=get_torch_dtype(args.dtype))
+        keys = torch.randn((B, H, N, kq_dim), requires_grad=args.do_backward or args.require_grad, dtype=get_torch_dtype(args.dtype))
+        values = torch.randn((B, H, N, val_dim), requires_grad=args.do_backward or args.require_grad, dtype=get_torch_dtype(args.dtype))
 
         if args.device == "cuda":
             torch.cuda.synchronize()
@@ -450,3 +465,4 @@ for N in Ns:
         file.write(f"nlist: {args.nlist}\n")
         file.write(f"nprobe: {args.nprobe}\n")
         file.write(f"do_backward: {args.do_backward}\n")
+        file.write(f"dtype: {args.dtype}\n")

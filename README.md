@@ -19,22 +19,23 @@ This repository was used to run the experiments in the following sections:
 The integrated experiments in 6.1, 6.4, 6.5, 6.6, and 6.8 were run with our other repository: k-MIP-Graph-Transformer
 
 
-## Environment setup with conda
-
+## Environment setup with uv
 ```
-conda create -n kmip python=3.9 -y
-conda activate kmip
+# ensure uv is installed
+curl -LsSf https://astral.sh/uv/install.sh | sh
 
-conda install "numpy<2.0"
-conda install pytorch=1.10 torchvision torchaudio faiss-gpu==1.8.0 -c pytorch -c nvidia
-conda install pyg=2.0.4 -c pyg -c conda-forge
+# ensure ninja is installed
+sudo apt install ninja-build
 
-conda install pytorch::faiss-gpu==1.8.0
-pip install pykeops matplotlib
-pip install flash-attn
-
-# installs the Ball Tree Search C++ extension
-python setup.py build; python setup.py install
+uv init
+uv add torch torchvision torchaudio pykeops matplotlib tqdm psutil
+export CXX=g++
+export CC=gcc
+export MAX_JOBS=30
+export CMAKE_BUILD_PARALLEL_LEVEL=30
+export NINJA_NUM_JOBS=30
+export BUILD_NINJA_PARALLEL=1
+uv add flash-attn==2.6.3 --no-build-isolation
 ```
 
 
