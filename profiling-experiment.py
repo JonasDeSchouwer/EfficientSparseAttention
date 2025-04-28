@@ -144,8 +144,10 @@ num_keys_searched_stds = []
 num_nodes_searched = []
 num_nodes_searched_stds = []
 approximation_qualities = []
-gpu_memory_usage = []  # New list to store GPU memory usage
-gpu_memory_usage_stds = []  # New list to store standard deviation of GPU memory usage
+gpu_memory_usage = []  # Memory before backward
+gpu_memory_usage_stds = []
+peak_memory_usage = []  # New list for peak memory
+peak_memory_usage_stds = []  # New list for peak memory standard deviation
 
 
 def get_torch_dtype(dtype_str: str) -> torch.dtype:
@@ -158,6 +160,13 @@ def get_torch_dtype(dtype_str: str) -> torch.dtype:
         return torch.bfloat16
     else:
         raise ValueError(f"Unsupported dtype: {dtype_str}")
+
+
+def get_peak_memory():
+    """Get peak memory usage in MB."""
+    if args.device == "cuda":
+        return torch.cuda.max_memory_allocated() / (1024 * 1024)
+    return 0  # For CPU, return 0 as we don't track CPU memory
 
 
 print(f"--- Profiling method {method} ---")
@@ -188,7 +197,8 @@ for N in Ns:
     run_num_nodes_searched = []
     run_approximation_qualities = []
     run_bf_attention_times = []
-    run_gpu_memory_usage = []  # New list to store GPU memory usage for each run
+    run_gpu_memory_usage = []
+    run_peak_memory = []  # New list for peak memory per run
 
     # --- main processing and profiling ---
     for run in range(num_runs + 1):
@@ -335,6 +345,9 @@ for N in Ns:
             out.sum().backward()
             if args.device == "cuda":
                 torch.cuda.synchronize()
+                peak_mem = get_peak_memory()
+                run_peak_memory.append(peak_mem)
+                print(f"Peak memory usage: {peak_mem:.2f} MB")
             end = time.time()
             run_backward_times.append(end - begin)
             print("backward time:", end - begin)
@@ -373,6 +386,9 @@ for N in Ns:
         total_stds.append(np.std(run_total_times))
         gpu_memory_usage.append(np.mean(run_gpu_memory_usage))
         gpu_memory_usage_stds.append(np.std(run_gpu_memory_usage))
+        run_peak_memory = run_peak_memory[1:]  # Remove first run
+        peak_memory_usage.append(np.mean(run_peak_memory))
+        peak_memory_usage_stds.append(np.std(run_peak_memory))
         print(
             "Backward time:",
             np.mean(run_backward_times),
@@ -384,6 +400,13 @@ for N in Ns:
             np.mean(run_gpu_memory_usage),
             "±",
             np.std(run_gpu_memory_usage),
+            "MB",
+        )
+        print(
+            "Peak memory usage:",
+            np.mean(run_peak_memory),
+            "±",
+            np.std(run_peak_memory),
             "MB",
         )
         print(
@@ -420,7 +443,7 @@ for N in Ns:
         bf_attention_times.append(np.mean(run_bf_attention_times))
         bf_attention_stds.append(np.std(run_bf_attention_times))
 
-    print("\Forward time means:", attention_times)
+    print("\nForward time means:", attention_times)
     print("Forward time stds:", attention_stds)
     if args.do_backward:
         print("Backward time means:", backward_times)
@@ -429,6 +452,8 @@ for N in Ns:
         print("Total time stds:", total_stds)
         print("GPU memory usage means:", gpu_memory_usage)
         print("GPU memory usage stds:", gpu_memory_usage_stds)
+        print("Peak memory usage means:", peak_memory_usage)
+        print("Peak memory usage stds:", peak_memory_usage_stds)
     if method in ("sym", "sparse_cpp"):
         print("Key search time means:", key_search_times)
         print("Key search time stds:", key_search_stds)
@@ -458,6 +483,8 @@ for N in Ns:
             file.write("Total time stds: " + str(total_stds) + "\n")
             file.write("GPU memory usage means: " + str(gpu_memory_usage) + "\n")
             file.write("GPU memory usage stds: " + str(gpu_memory_usage_stds) + "\n\n")
+            file.write("Peak memory usage means: " + str(peak_memory_usage) + "\n")
+            file.write("Peak memory usage stds: " + str(peak_memory_usage_stds) + "\n\n")
         if method in ("sym", "sparse_cpp", "naive"):
             file.write("Key search time means: " + str(key_search_times) + "\n")
             file.write("Key search time stds: " + str(key_search_stds) + "\n")
