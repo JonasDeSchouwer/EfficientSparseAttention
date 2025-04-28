@@ -1,3 +1,4 @@
+import gc
 import torch
 import math
 import time
@@ -322,6 +323,9 @@ for N in Ns:
         if args.do_backward:
             # Measure GPU memory usage before backward pass
             if args.device == "cuda":
+                torch.cuda.synchronize()
+                gc.collect()
+                torch.cuda.empty_cache()
                 torch.cuda.synchronize()
                 current_memory = torch.cuda.memory_allocated() / (1024 * 1024)  # Convert to MB
                 run_gpu_memory_usage.append(current_memory)
