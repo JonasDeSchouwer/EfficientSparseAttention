@@ -143,6 +143,8 @@ num_keys_searched_stds = []
 num_nodes_searched = []
 num_nodes_searched_stds = []
 approximation_qualities = []
+gpu_memory_usage = []  # New list to store GPU memory usage
+gpu_memory_usage_stds = []  # New list to store standard deviation of GPU memory usage
 
 
 def get_torch_dtype(dtype_str: str) -> torch.dtype:
@@ -185,6 +187,7 @@ for N in Ns:
     run_num_nodes_searched = []
     run_approximation_qualities = []
     run_bf_attention_times = []
+    run_gpu_memory_usage = []  # New list to store GPU memory usage for each run
 
     # --- main processing and profiling ---
     for run in range(num_runs + 1):
@@ -317,6 +320,13 @@ for N in Ns:
             raise Exception(f"method {method} unknown")
         
         if args.do_backward:
+            # Measure GPU memory usage before backward pass
+            if args.device == "cuda":
+                torch.cuda.synchronize()
+                current_memory = torch.cuda.memory_allocated() / (1024 * 1024)  # Convert to MB
+                run_gpu_memory_usage.append(current_memory)
+                print(f"GPU memory usage before backward: {current_memory:.2f} MB")
+            
             begin = time.time()
             out.sum().backward()
             if args.device == "cuda":
@@ -335,6 +345,7 @@ for N in Ns:
     if args.do_backward:
         run_backward_times = run_backward_times[1:]
         run_total_times = run_total_times[1:]
+        run_gpu_memory_usage = run_gpu_memory_usage[1:]
     if method in ("sym", "sparse_cpp", "naive"):
         run_key_search_times = run_key_search_times[1:]
         run_post_processing_times = run_post_processing_times[1:]
@@ -354,14 +365,23 @@ for N in Ns:
     if args.do_backward:
         backward_times.append(np.mean(run_backward_times))
         backward_stds.append(np.std(run_backward_times))
+        total_times.append(np.mean(run_total_times))
+        total_stds.append(np.std(run_total_times))
+        gpu_memory_usage.append(np.mean(run_gpu_memory_usage))
+        gpu_memory_usage_stds.append(np.std(run_gpu_memory_usage))
         print(
             "Backward time:",
             np.mean(run_backward_times),
             "±",
             np.std(run_backward_times),
         )
-        total_times.append(np.mean(run_total_times))
-        total_stds.append(np.std(run_total_times))
+        print(
+            "GPU memory usage before backward:",
+            np.mean(run_gpu_memory_usage),
+            "±",
+            np.std(run_gpu_memory_usage),
+            "MB",
+        )
         print(
             "Total time:",
             np.mean(run_total_times),
@@ -403,6 +423,8 @@ for N in Ns:
         print("Backward time stds:", backward_stds)
         print("Total time means:", total_times)
         print("Total time stds:", total_stds)
+        print("GPU memory usage means:", gpu_memory_usage)
+        print("GPU memory usage stds:", gpu_memory_usage_stds)
     if method in ("sym", "sparse_cpp"):
         print("Key search time means:", key_search_times)
         print("Key search time stds:", key_search_stds)
@@ -429,7 +451,9 @@ for N in Ns:
             file.write("Backward time means: " + str(backward_times) + "\n")
             file.write("Backward time stds: " + str(backward_stds) + "\n")
             file.write("Total time means: " + str(total_times) + "\n")
-            file.write("Total time stds: " + str(total_stds) + "\n\n")
+            file.write("Total time stds: " + str(total_stds) + "\n")
+            file.write("GPU memory usage means: " + str(gpu_memory_usage) + "\n")
+            file.write("GPU memory usage stds: " + str(gpu_memory_usage_stds) + "\n\n")
         if method in ("sym", "sparse_cpp", "naive"):
             file.write("Key search time means: " + str(key_search_times) + "\n")
             file.write("Key search time stds: " + str(key_search_stds) + "\n")
