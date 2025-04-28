@@ -21,7 +21,7 @@ def symbolic_sparse_nearest_k_keys(
 
     N = keys.shape[-2]
         
-    if N < 3000:
+    if N < 6000:
         # use dense tensors, as they are more efficient
         # [**, num_heads, N, N]
         full_attention_weights = torch.einsum("...ik,...jk->...ij", queries, keys)
