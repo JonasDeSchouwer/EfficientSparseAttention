@@ -9,6 +9,8 @@ import datetime
 import os
 
 
+# Set environment variable for PyTorch CUDA memory allocation
+os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--B", type=int, default=1)
@@ -103,7 +105,7 @@ if args.device == "cuda":
         torch.cuda.get_device_properties(i).total_memory for i in range(num_gpus)
     ]  # in bytes
     biggest_allocation_memory = int(
-        min(gpu_memories) / 2
+        min([torch.cuda.get_device_properties(i).total_memory - torch.cuda.memory_allocated(i) for i in range(num_gpus)]) / 2
     )  # in bytes, this determines the batch size. The /2 is to be on the safe side
 else:
     biggest_allocation_memory = 1e9
