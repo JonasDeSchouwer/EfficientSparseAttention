@@ -19,10 +19,19 @@ def batched_naive_sparse_nearest_k_keys(
         [**, num_heads, N, k]
     """
 
+    B = queries.shape[-4]
+    H = queries.shape[-3]
     N = keys.shape[-2]
+    available_memory = int(
+        min([torch.cuda.get_device_properties(i).total_memory - torch.cuda.memory_allocated(i) for i in range(torch.cuda.device_count())])
+    )
+
+    # the amount of GPU memory necessary is ct_mem + #queries * marg_mem_per_query
+    ct_mem = torch.cuda.memory_allocated(queries[..., :k])
+    marg_mem_per_query = B * H * queries.element_size() * N
     batch_size = math.ceil(
-        biggest_allocation_memory / (4 * N)
-    )  # choose batch size such that the number of bytes in the tensors is below biggest_allocation_memory
+        (available_memory - ct_mem) / (marg_mem_per_query)
+    )  # choose batch size such that the number of bytes in the tensors is below available_memory
     num_batches = math.ceil(N / batch_size)
     print(f"batch_size: {batch_size}, num_batches: {num_batches}")
 
