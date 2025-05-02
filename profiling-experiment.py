@@ -349,15 +349,18 @@ for N in Ns:
             out.sum().backward()
             if args.device == "cuda":
                 torch.cuda.synchronize()
-                peak_mem = get_peak_memory()
-                run_peak_memory.append(peak_mem)
-                print(f"Peak memory usage: {peak_mem:.2f} MB")
             end = time.time()
             run_backward_times.append(end - begin)
             print("backward time:", end - begin)
 
             run_total_times.append(run_attention_times[-1] + run_backward_times[-1])
             print("total time:", run_total_times[-1])
+
+        if args.device == "cuda":
+            torch.cuda.synchronize()
+            peak_mem = get_peak_memory()
+            run_peak_memory.append(peak_mem)
+            print(f"Peak memory usage: {peak_mem:.2f} MB")
         
         del queries, keys, values, out
 
