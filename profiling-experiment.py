@@ -393,9 +393,6 @@ for N in Ns:
         total_stds.append(np.std(run_total_times))
         gpu_memory_usage.append(np.mean(run_gpu_memory_usage))
         gpu_memory_usage_stds.append(np.std(run_gpu_memory_usage))
-        run_peak_memory = run_peak_memory[1:]  # Remove first run
-        peak_memory_usage.append(np.mean(run_peak_memory))
-        peak_memory_usage_stds.append(np.std(run_peak_memory))
         print(
             "Backward time:",
             np.mean(run_backward_times),
@@ -410,17 +407,21 @@ for N in Ns:
             "MB",
         )
         print(
+            "Total time:",
+            np.mean(run_total_times),
+            "±",
+            np.std(run_total_times),
+        )
+    if args.device == "cuda":
+        run_peak_memory = run_peak_memory[1:]  # Remove first run
+        peak_memory_usage.append(np.mean(run_peak_memory))
+        peak_memory_usage_stds.append(np.std(run_peak_memory))
+        print(
             "Peak memory usage:",
             np.mean(run_peak_memory),
             "±",
             np.std(run_peak_memory),
             "MB",
-        )
-        print(
-            "Total time:",
-            np.mean(run_total_times),
-            "±",
-            np.std(run_total_times),
         )
 
     if method in ("sym", "sparse_cpp", "naive"):
@@ -459,6 +460,7 @@ for N in Ns:
         print("Total time stds:", total_stds)
         print("GPU memory usage means:", gpu_memory_usage)
         print("GPU memory usage stds:", gpu_memory_usage_stds)
+    if args.device == "cuda":
         print("Peak memory usage means:", peak_memory_usage)
         print("Peak memory usage stds:", peak_memory_usage_stds)
     if method in ("sym", "sparse_cpp"):
@@ -490,6 +492,7 @@ for N in Ns:
             file.write("Total time stds: " + str(total_stds) + "\n")
             file.write("GPU memory usage means: " + str(gpu_memory_usage) + "\n")
             file.write("GPU memory usage stds: " + str(gpu_memory_usage_stds) + "\n\n")
+        if args.device == "cuda":
             file.write("Peak memory usage means: " + str(peak_memory_usage) + "\n")
             file.write("Peak memory usage stds: " + str(peak_memory_usage_stds) + "\n\n")
         if method in ("sym", "sparse_cpp", "naive"):
