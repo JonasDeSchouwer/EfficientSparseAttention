@@ -453,18 +453,18 @@ for N in Ns:
         bf_attention_times.append(np.mean(run_bf_attention_times))
         bf_attention_stds.append(np.std(run_bf_attention_times))
 
-    print("\nForward time means:", attention_times)
-    print("Forward time stds:", attention_stds)
+    print("\nforward_means:", attention_times)
+    print("forward_stds:", attention_stds)
     if args.do_backward:
-        print("Backward time means:", backward_times)
-        print("Backward time stds:", backward_stds)
-        print("Total time means:", total_times)
-        print("Total time stds:", total_stds)
-        print("GPU memory usage means:", gpu_memory_usage)
-        print("GPU memory usage stds:", gpu_memory_usage_stds)
+        print("backward_means:", backward_times)
+        print("backward_stds:", backward_stds)
+        print("total_means:", total_times)
+        print("total_stds:", total_stds)
+        print("memory_means:", gpu_memory_usage)
+        print("memory_stds:", gpu_memory_usage_stds)
     if args.device == "cuda":
-        print("Peak memory usage means:", peak_memory_usage)
-        print("Peak memory usage stds:", peak_memory_usage_stds)
+        print("peak_means:", peak_memory_usage)
+        print("peak_stds:", peak_memory_usage_stds)
     if method in ("sym", "sparse_cpp"):
         print("Key search time means:", key_search_times)
         print("Key search time stds:", key_search_stds)
