@@ -8,7 +8,6 @@ def faiss_search(
     queries: torch.Tensor,
     keys: torch.Tensor,
     k: int,
-    biggest_allocation_memory: int,
     device: str,
     nlist=None,
     nprobe=None,

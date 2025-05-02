@@ -16,7 +16,6 @@ def batched_post_processing(
     keys: torch.Tensor,
     values: torch.Tensor,
     args: Namespace,
-    biggest_allocation_memory: int,
 ):
     """
     Post processing for sparse attention.
@@ -30,9 +29,15 @@ def batched_post_processing(
     B = keys.shape[0]
     H = keys.shape[1]
     N = keys.shape[2]
+    available_memory = int(
+        min([torch.cuda.get_device_properties(i).total_memory - torch.cuda.memory_allocated(i) for i in range(torch.cuda.device_count())])
+    )
+    
+    # the amount of GPU memory necessary is ct_mem + #queries * marg_mem_per_query
+    ct_mem = torch.cuda.memory_allocated(values)
+    marg_mem_per_query = B * H * args.k * max(args.kq_dim, args.val_dim) * 2
     batch_size = math.ceil(
-        biggest_allocation_memory
-        / (4 * B * H * args.k * max(args.kq_dim, args.val_dim) * 3)
+        (available_memory - ct_mem) / (marg_mem_per_query)
     )  # choose batch size such that the number of bytes in the LazyTensors is below biggest_allocation_memory
     num_batches = math.ceil(N / batch_size)
 

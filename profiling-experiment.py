@@ -99,17 +99,6 @@ else:
     ]
     Ns = list(filter(lambda x: args.minN <= x <= args.maxN, map(int, Ns)))
 
-if args.device == "cuda":
-    num_gpus = torch.cuda.device_count()
-    gpu_memories = [
-        torch.cuda.get_device_properties(i).total_memory for i in range(num_gpus)
-    ]  # in bytes
-    biggest_allocation_memory = int(
-        min([torch.cuda.get_device_properties(i).total_memory - torch.cuda.memory_allocated(i) for i in range(num_gpus)]) / 2
-    )  # in bytes, this determines the batch size. The /2 is to be on the safe side
-else:
-    biggest_allocation_memory = 1e9
-
 timestamp = datetime.datetime.now().strftime("%m.%d-%H:%M")
 
 print("method:", method)
@@ -180,20 +169,6 @@ print(f"--- Profiling method {method} ---")
 for N in Ns:
     print("\n- N =", N, "-")
 
-    if method == "full":
-        print("Batch size:", math.ceil(biggest_allocation_memory / (4 * N)))
-    elif method == "sym":
-        print(
-            "Batch size for key search:",
-            "no batching! LazyTensors are never materialized",
-        )
-        print(
-            "Batch size for post processing:",
-            math.ceil(
-                biggest_allocation_memory / (4 * B * H * k * max(kq_dim, val_dim) * 3)
-            ),
-        )
-
     run_attention_times = []
     run_key_search_times = []
     run_post_processing_times = []
@@ -225,7 +200,7 @@ for N in Ns:
 
         if method == "full":
             begin = time.time()
-            out = batched_full_MHA(queries, keys, values, biggest_allocation_memory, detailed_profiling)
+            out = batched_full_MHA(queries, keys, values, detailed_profiling)
             if args.device == "cuda":
                 torch.cuda.synchronize()  # for accurate time measurement
             end = time.time()
@@ -263,7 +238,7 @@ for N in Ns:
                 run_num_nodes_searched.append(num_n_s)
             elif method == "naive":
                 nearest_key_indices = batched_naive_sparse_nearest_k_keys(
-                    queries, keys, k, biggest_allocation_memory
+                    queries, keys, k,
                 ).to(torch.int64)
             if args.device == "cuda":
                 print("waiting for synchronize ...", end=" ")
@@ -281,7 +256,6 @@ for N in Ns:
                 keys,
                 values,
                 args,
-                biggest_allocation_memory,
             )
             if args.device == "cuda":
                 torch.cuda.synchronize()  # for accurate time measurement
@@ -297,7 +271,6 @@ for N in Ns:
             begin = time.time()
             topk_faiss = faiss_search(
                 queries, keys, k,
-                biggest_allocation_memory,
                 device=args.device,
                 detailed_profiling=detailed_profiling,
                 nlist=args.nlist,

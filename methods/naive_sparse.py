@@ -6,7 +6,6 @@ from tqdm import tqdm
 @torch.no_grad()
 def batched_naive_sparse_nearest_k_keys(
     queries: torch.Tensor, keys: torch.Tensor, k,
-    biggest_allocation_memory: int,
 ) -> torch.Tensor:
     """
     Compute the nearest k keys for each query. Return their indices in a [**, num_heads, N, k] tensor.
@@ -28,9 +27,11 @@ def batched_naive_sparse_nearest_k_keys(
 
     # the amount of GPU memory necessary is ct_mem + #queries * marg_mem_per_query
     ct_mem = torch.cuda.memory_allocated(queries[..., :k])
+    safety_ct = 9*ct_mem
+    safety_factor = 1.1
     marg_mem_per_query = B * H * queries.element_size() * N
     batch_size = math.ceil(
-        (available_memory - ct_mem) / (marg_mem_per_query)
+        (available_memory - ct_mem - safety_ct) / (marg_mem_per_query * safety_factor)
     )  # choose batch size such that the number of bytes in the tensors is below available_memory
     num_batches = math.ceil(N / batch_size)
     print(f"batch_size: {batch_size}, num_batches: {num_batches}")
