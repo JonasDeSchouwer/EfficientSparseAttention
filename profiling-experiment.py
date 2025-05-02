@@ -24,6 +24,7 @@ parser.add_argument(
 )
 parser.add_argument("--minN", type=int, default=1e2)
 parser.add_argument("--maxN", type=int, default=1e6)
+parser.add_argument("--specific-ns", type=int, nargs='+', default=None, help="List of specific N values to test")
 parser.add_argument("--num_runs", type=int, default=5)
 parser.add_argument("--device", type=str, default="cuda", choices=["cpu", "cuda"])
 parser.add_argument("--name", type=str, default="", help="Name of the experiment")
@@ -74,24 +75,27 @@ track_approx = args.track_approx
 detailed_profiling = args.detailed_profiling
 
 sqrt10 = math.sqrt(10)
-Ns = [
-    1e2,
-    sqrt10 * 1e2,
-    1e3,
-    sqrt10 * 1e3,
-    1e4,
-    sqrt10 * 1e4,
-    1e5,
-    sqrt10 * 1e5,
-    1e6,
-    sqrt10 * 1e6,
-    1e7,
-    sqrt10 * 1e7,
-    1e8,
-    sqrt10 * 1e8,
-    1e9,
-]
-Ns = list(filter(lambda x: args.minN <= x <= args.maxN, map(int, Ns)))
+if args.specific_ns is not None:
+    Ns = args.specific_ns
+else:
+    Ns = [
+        1e2,
+        sqrt10 * 1e2,
+        1e3,
+        sqrt10 * 1e3,
+        1e4,
+        sqrt10 * 1e4,
+        1e5,
+        sqrt10 * 1e5,
+        1e6,
+        sqrt10 * 1e6,
+        1e7,
+        sqrt10 * 1e7,
+        1e8,
+        sqrt10 * 1e8,
+        1e9,
+    ]
+    Ns = list(filter(lambda x: args.minN <= x <= args.maxN, map(int, Ns)))
 
 if args.device == "cuda":
     num_gpus = torch.cuda.device_count()
@@ -209,7 +213,6 @@ for N in Ns:
 
         if args.device == "cuda":
             torch.cuda.synchronize()
-            torch.cuda.empty_cache()
             queries = queries.cuda()
             keys = keys.cuda()
             values = values.cuda()
@@ -267,6 +270,8 @@ for N in Ns:
             end = time.time()
             run_key_search_times.append(end - begin)
 
+            gc.collect()
+            
             begin = time.time()
             out = batched_post_processing(
                 nearest_key_indices,
@@ -335,7 +340,6 @@ for N in Ns:
             if args.device == "cuda":
                 torch.cuda.synchronize()
                 gc.collect()
-                torch.cuda.empty_cache()
                 torch.cuda.synchronize()
                 current_memory = torch.cuda.memory_allocated() / (1024 * 1024)  # Convert to MB
                 run_gpu_memory_usage.append(current_memory)
