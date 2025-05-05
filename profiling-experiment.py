@@ -38,7 +38,7 @@ parser.add_argument("--nlist", type=int, default=None)
 parser.add_argument("--nprobe", type=int, default=None)
 parser.add_argument("--do_backward", action="store_true")
 parser.add_argument("--require_grad", action="store_true")
-parser.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "fp16", "bf16"], help="Data type for tensors")
+parser.add_argument("--dtype", type=str, default="fp32", choices=["fp32", "fp16", "bf16", "fp64"], help="Data type for tensors")
 args = parser.parse_args()
 
 
@@ -153,6 +153,8 @@ def get_torch_dtype(dtype_str: str) -> torch.dtype:
         return torch.float16
     elif dtype_str == "bf16":
         return torch.bfloat16
+    elif dtype_str == "fp64":
+        return torch.float64
     else:
         raise ValueError(f"Unsupported dtype: {dtype_str}")
 
