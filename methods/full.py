@@ -35,9 +35,11 @@ def batched_full_MHA(
 
     # the amount of GPU memory necessary is ct_mem + #queries * marg_mem_per_query
     ct_mem = torch.cuda.memory_allocated(values)
+    safety_ct = 9*ct_mem
+    safety_factor = 1.05
     marg_mem_per_query = B * H * 2 * queries.element_size() * N + val_dim
     batch_size = math.ceil(
-        (available_memory - ct_mem) / (marg_mem_per_query)
+        (available_memory - ct_mem - safety_ct) / (marg_mem_per_query * safety_factor)
     )  # choose batch size such that the number of bytes in the tensors is below available_memory
     num_batches = math.ceil(N / batch_size)
     print(f"batch_size: {batch_size}, num_batches: {num_batches}")

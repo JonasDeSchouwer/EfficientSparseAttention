@@ -28,7 +28,7 @@ def batched_naive_sparse_nearest_k_keys(
     # the amount of GPU memory necessary is ct_mem + #queries * marg_mem_per_query
     ct_mem = torch.cuda.memory_allocated(queries[..., :k])
     safety_ct = 9*ct_mem
-    safety_factor = 1.1
+    safety_factor = 1.05
     marg_mem_per_query = B * H * queries.element_size() * N
     batch_size = math.ceil(
         (available_memory - ct_mem - safety_ct) / (marg_mem_per_query * safety_factor)
