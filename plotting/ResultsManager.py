@@ -20,6 +20,41 @@ class Results:
     peak_means: Optional[np.ndarray] = None
     peak_stds: Optional[np.ndarray] = None
 
+    def print_table(self):
+        """Print a table of the results, in LaTeX formatting."""
+
+        lines = []
+
+        # Helper function to format time values
+        def format_time(seconds):
+            if seconds < 1:  # Less than 1s
+                return f"{seconds * 1000:.2f} ms"
+            else:
+                return f"{seconds:.3f} s"
+
+        # Print data rows
+        for N, forward, backward, total, peak in zip(
+            self.Ns,
+            self.forward_means,
+            self.backward_means,
+            self.total_means,
+            self.peak_means
+        ):
+            # Format N as 10^x
+            N_exp = np.log10(N)
+            N_str = f"$\\bs{{10^{{{N_exp:.1f}}}}}$"
+            
+            # Format all values
+            forward_time = format_time(forward)
+            backward_time = format_time(backward)
+            total_time = format_time(total)
+            peak_mem = f"{peak:.2f}"
+
+            lines.append(f"        {N_str} & - & {forward_time} & {backward_time} & {total_time} & {peak_mem} \\\\")
+
+        print("\n".join(lines))
+
+
 class ResultsManager:
     """Manages profiling results for multiple algorithms."""
     
@@ -85,12 +120,13 @@ class ResultsManager:
         fig = plt.figure()
         self._plot_means_std(means_attr, stds_attr, ylabel)
 
-        if save_path:
-            plt.savefig(save_path, bbox_inches="tight")
 
         if show_legend:
             legend_y = 1.45 if self.display_settings.display_flash else 1.35
             plt.legend(loc="upper center", bbox_to_anchor=(0.5, legend_y), ncol=1, fontsize=self.display_settings.legend_fontsize)
+            
+        if save_path:
+            plt.savefig(save_path, bbox_inches="tight")
 
         plt.show()
 
