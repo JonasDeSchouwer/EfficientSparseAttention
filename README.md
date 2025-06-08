@@ -21,6 +21,9 @@ The integrated experiments in 6.1, 6.4, 6.5, 6.6, and 6.8 were run with our othe
 
 ## Environment setup with uv
 ```
+# clone this repository
+git clone https://github.com/JonasDeSchouwer/EfficientSparseAttention
+
 # ensure uv is installed
 curl -LsSf https://astral.sh/uv/install.sh | sh
 
@@ -31,11 +34,13 @@ uv init
 uv add torch torchvision torchaudio pykeops matplotlib tqdm psutil
 export CXX=g++
 export CC=gcc
-export MAX_JOBS=30
-export CMAKE_BUILD_PARALLEL_LEVEL=30
-export NINJA_NUM_JOBS=30
+export MAX_JOBS=20
+export CMAKE_BUILD_PARALLEL_LEVEL=20
+export NINJA_NUM_JOBS=20
 export BUILD_NINJA_PARALLEL=1
-uv add flash-attn==2.6.3 --no-build-isolation
+uv add flash-attn==2.6.3 --no-build-isolation   # this can take +- 30 mins
+
+# to remove all uv packages: uv pip sync --allow-empty-requirements <(echo "")
 ```
 
 

@@ -11,6 +11,18 @@ class DisplaySettings:
         'sym': 'C0',
         'flash': 'C4',
     }
+    markers = {
+        'full': 'o',
+        'naive': 'x',
+        'sym': 'D',
+        'flash': 's',
+    }
+    linestyles = {
+        'full': '-',
+        'naive': '-',
+        'sym': '-',
+        'flash': '-',
+    }
     legend_fontsize: int = 15
     axis_fontsize: int = 15
     ylim: Optional[List[float]] = None

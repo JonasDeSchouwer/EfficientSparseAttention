@@ -105,7 +105,9 @@ class ResultsManager:
                 stds = stds[:num_Ns_under_max_N]
 
             color = self.display_settings.colors[algorithm]
-            plt.plot(Ns, means, label=results.label, marker='o', color=color)
+            marker = self.display_settings.markers[algorithm]
+            linestyle = self.display_settings.linestyles[algorithm]
+            plt.plot(Ns, means, label=results.label, marker=marker, color=color)
             plt.fill_between(Ns, means - stds, means + stds, alpha=0.2, color=color)
         
         plt.xscale("log")
